@@ -103,11 +103,6 @@
          (sort-by (fn [[c v]] (- (* c 4) (count (filter singles v)))))
          (map #(nth % 2)))))
 
-(defn binding-combos
-  [bindings]
-  (map #(zipmap (keys bindings) (map hash-set %))
-       (apply util/cartesian-product (vals bindings))))
-
 (defn unique-var-bindings?
   [bindings]
   (when (= (count bindings)
@@ -127,11 +122,13 @@
         ;; (prn :new-bind new-binds)
         ;; (prn :b-combos b-combos)
         (if (seq patterns)
-          (mapcat (fn [b]
-                    (when-let [b (unique-var-bindings? (merge bindings b))]
-                      (select-join ds patterns b)))
-                  new-binds)
-          (map #(merge bindings %) (map #(select-keys % p-vars) res)))))))
+          (mapcat
+           #(when-let [b (unique-var-bindings? (merge bindings %))]
+              (select-join ds patterns b))
+           new-binds)
+          (->> res
+               (map #(unique-var-bindings? (merge bindings (select-keys % p-vars))))
+               (filter (complement nil?))))))))
 
 (defn select-join
   [ds [p & patterns] bindings]
