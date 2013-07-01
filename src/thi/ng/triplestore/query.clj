@@ -35,55 +35,58 @@
       => ((\"me\" :type \"foo\") (\"me\" :type \"bar\")
           (\"you\" :type \"foo\") (\"you\" :type \"bar\"))"
   [[s p o] bindings]
-  (util/cartesian-product
-   (or (bindings s) [s])
-   (or (bindings p) [p])
-   (or (bindings o) [o])))
+  (let [s (or (bindings s) s)
+        p (or (bindings p) p)
+        o (or (bindings o) o)]
+    (if (some set? [s p o])
+      (util/cartesian-product
+       (if (set? s) s #{s}) (if (set? p) p #{p}) (if (set? o) o #{o}))
+      [[s p o]])))
 
 (defn inject-res-var
   "Takes a map `r`, a vector `t`, a var name `v` and an index. If `v`
   is truthy, injects `v` as new key into `r` with its value at (t idx)."
   [r t v idx] (if v (assoc r v (t idx)) r))
 
+(defn triple-verifier
+  [[ts tp to] [syms symp symo]]
+  (fn [[rs rp ro]]
+    (cond
+     (and syms symp symo) (cond
+                           (= ts tp to) (= rs rp ro)
+                           (= ts tp) (and (= rs rp) (not= rs ro))
+                           (= ts to) (and (= rs ro) (not= rs rp))
+                           (= tp to) (and (= rp ro) (not= rs rp))
+                           :default true)
+     (and syms symp) ((if (= ts tp) = not=) rs rp)
+     (and syms symo) ((if (= ts to) = not=) rs ro)
+     (and symp symo) ((if (= tp to) = not=) rp ro)
+     :default true)))
+
 (defn select-with-bindings
   ([store t] (select-with-bindings store t {}))
   ([store [ts tp to :as t] b]
-     (let [[syms symp symo] (map symbol? t)
+     (let [[syms symp symo :as sym] (map symbol? t)
            [qs b] (if syms [nil (assoc b :s ts)] [ts b])
            [qp b] (if symp [nil (assoc b :p tp)] [tp b])
            [qo b] (if symo [nil (assoc b :o to)] [to b])
-           {:keys [s p o]} b]
+           {:keys [s p o]} b
+           verify (triple-verifier t sym)]
        (->> (api/select store qs qp qo)
             (map
              (fn [t]
-               (let [ok? (cond
-                          (and syms symp (= ts tp)) (= (t 0) (t 1))
-                          (and syms symo (= ts to)) (= (t 0) (t 2))
-                          (and symp symo (= tp to)) (= (t 1) (t 2))
-                          :default true)]
-                 (when ok?
-                   (-> {:triple t}
-                       (inject-res-var t s 0)
-                       (inject-res-var t p 1)
-                       (inject-res-var t o 2))))))
+               (when (verify t)
+                 (-> {:triple t}
+                     (inject-res-var t s 0)
+                     (inject-res-var t p 1)
+                     (inject-res-var t o 2)))))
             (filter (complement nil?))))))
-
-(defn select-with-prebounds
-  [store [s p o :as t] bindings]
-  (let [bmap (if (bindings s) {:s s} {})
-        bmap (if (bindings p) {:p p} bmap)
-        bmap (if (bindings o) {:o o} bmap)
-        queries (produce-queries-with-bound-vars t bindings)]
-    ;;(prn :queries queries)
-    ;;(prn :bmap bmap)
-    ;;(prn :bindings bindings)
-    (mapcat #(select-with-bindings store % bmap) queries)))
 
 (defn build-queries-with-prebounds
   [[s p o :as t] bindings]
   (let [bmap (if (bindings s) {:s s} {})
-        bmap (if (bindings p) {:p p} bmap)
-        bmap (if (bindings o) {:o o} bmap)
+        bmap (if (bindings p) (assoc bmap :p p) bmap)
+        bmap (if (bindings o) (assoc bmap :o o) bmap)
         queries (produce-queries-with-bound-vars t bindings)]
     ;;(prn :queries queries)
     ;;(prn :bmap bmap)
@@ -119,10 +122,7 @@
   (let [res (select-with-bindings ds p bmap)]
     (when (seq res)
       (let [p-vars (util/filter-tree qvar? p)
-            new-binds (accumulate-var-values res p-vars)
-            b-combos (->> new-binds
-                          (binding-combos)
-                          (filter unique-var-bindings?))]
+            new-binds (into #{} (map #(select-keys % p-vars) res))]
         ;; (prn :bindings bindings)
         ;; (prn :new-bind new-binds)
         ;; (prn :b-combos b-combos)
@@ -130,12 +130,13 @@
           (mapcat (fn [b]
                     (when-let [b (unique-var-bindings? (merge bindings b))]
                       (select-join ds patterns b)))
-                  b-combos)
+                  new-binds)
           (map #(merge bindings %) (map #(select-keys % p-vars) res)))))))
 
 (defn select-join
   [ds [p & patterns] bindings]
   (let [queries (build-queries-with-prebounds p bindings)]
+    ;;(prn :queries queries)
     (mapcat
      (fn [q]
        ;; (prn :q q :bindings bindings)
