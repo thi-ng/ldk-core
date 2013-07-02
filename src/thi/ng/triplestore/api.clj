@@ -3,7 +3,11 @@
 (defprotocol PModel
   (add-statement [this s p o] [this g s p o])
   (remove-statement [this s p o] [this g s p o])
-  (select [this s p o] [this g s p o]))
+  (select [this s p o] [this g s p o])
+  (subject? [this x])
+  (predicate? [this x])
+  (object? [this x])
+  (indexed? [this x]))
 
 (defprotocol PDataset
   (add-model [this id m])

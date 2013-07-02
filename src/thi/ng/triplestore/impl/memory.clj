@@ -63,6 +63,13 @@
             (prune-entity-index ph)
             (prune-entity-index oh))
         this)))
+  (subject? [this x]
+    (let [h (*hashimpl* x)] (when (spo h) (idx h))))
+  (predicate? [this x]
+    (let [h (*hashimpl* x)] (when (pos h) (idx h))))
+  (object? [this x]
+    (let [h (*hashimpl* x)] (when (ops h) (idx h))))
+  (indexed? [this x] (idx (*hashimpl* x)))
   (select [{idx :idx :as this} s p o]
     (let [[sh ph oh] (map *hashimpl* [s p o])]
       (if s
@@ -107,6 +114,13 @@
     [this s p o] (mapcat #(api/select % s p o) (vals models)))
   (select
     [this g s p o] (api/select (g models) s p o))
+  (subject? [this x]
+    (some #(api/subject? % x) (vals models)))
+  (predicate? [this x]
+    (some #(api/predicate? % x) (vals models)))
+  (object? [this x]
+    (some #(api/object? % x) (vals models)))
+  (indexed? [this x] (some #(api/indexed? % x) (vals models)))
   api/PDataset
   (add-model
     [this id m] (assoc-in this [:models id] m))
