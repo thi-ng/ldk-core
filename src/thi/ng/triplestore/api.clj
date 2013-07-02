@@ -9,10 +9,12 @@
   (add-model [this id m])
   (remove-model [this id]))
 
+(defprotocol PIndexable
+  (index-value [this]))
+
 (defprotocol PNode
   (uri [this])
   (label [this])
-  (index-value [this])
   (blank? [this])
   (literal? [this])
   (uri? [this]))
@@ -25,3 +27,9 @@
 (defprotocol PResource
   (ns-uri [this])
   (local-uri [this]))
+
+(extend-protocol PIndexable
+  String
+  (index-value [this] this)
+  nil
+  (index-value [this] this))
