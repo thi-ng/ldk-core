@@ -10,7 +10,7 @@
 (defn index-entity
   [{idx :idx :as store} e]
   (let [h (*hashimpl* e)]
-    (if ((:idx store) e)
+    (if (idx h)
       [store h]
       [(assoc-in store [:idx h] e) h])))
 
@@ -74,30 +74,30 @@
   (predicates [this] (map idx (keys pos)))
   (objects [this] (map idx (keys ops)))
   (prefix-map [this] ns)
-  (select [{idx :idx :as this} s p o]
+  (select [this s p o]
     (let [[sh ph oh] (map *hashimpl* [s p o])]
       (if s
         (if p
           (if o
             ;; s p o
-            (when (get-in spo [sh ph oh]) [[s p o]])
+            (when (get-in spo [sh ph oh]) [[(idx sh) (idx ph) (idx oh)]])
             ;; s p nil
             (when-let [objects (get-in spo [sh ph])]
-              (map (triple-sp* this s p) objects)))
+              (map (triple-sp* this (idx sh) (idx ph)) objects)))
           (when-let [subjects (spo sh)]
-            (select-seq subjects #(triple-sp* this s (idx %)) (when o #(= oh %)))))
+            (select-seq subjects #(triple-sp* this (idx sh) (idx %)) (when o #(= oh %)))))
         (if p
           (if o
             ;; nil p o
             (when-let [subjects (get-in pos [ph oh])]
-              (map (triple-*po this p o) subjects))
+              (map (triple-*po this (idx ph) (idx oh)) subjects))
             ;; nil p nil
             (when-let [preds (pos ph)]
-              (select-seq preds #(triple-*po this p (idx %)))))
+              (select-seq preds #(triple-*po this (idx ph) (idx %)))))
           (if o
             ;; nil nil o
             (when-let [objects (ops oh)]
-              (select-seq objects #(triple-*po this (idx %) o)))
+              (select-seq objects #(triple-*po this (idx %) (idx oh))))
             ;; nil nil nil
             (mapcat
              (fn [[sh props]]
@@ -171,4 +171,4 @@
 
 (defn select-from
   [[s p o] triples]
-  (api/select (apply add-many (make-mem-store) triples) s p o))
+  (api/select (apply api/add-many (make-mem-store) triples) s p o))
