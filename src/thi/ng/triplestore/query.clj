@@ -110,6 +110,14 @@
            (count (set (concat (vals bindings)))))
     bindings))
 
+(defn restrict-bindings
+  [p bmap bindings]
+  (let [p (vec p)]
+    (reduce
+     (fn [b [k v]]
+       (if (set? (b v)) (assoc b v (p ({:s 0 :p 1 :o 2} k))) b))
+     bindings bmap)))
+
 (declare select-join)
 
 (defn select-join*
@@ -135,11 +143,12 @@
   ([ds patterns] (select-join ds (sort-patterns patterns) {}))
   ([ds [p & patterns] bindings]
      (let [queries (build-queries-with-prebounds p bindings)]
-       ;;(prn :queries queries)
+       ;; (prn :queries queries)
        (mapcat
-        (fn [q]
-          ;; (prn :q q :bindings bindings)
-          (select-join* ds (cons q patterns) bindings))
+        (fn [[p bmap :as q]]
+          (let [r-binds (restrict-bindings p bmap bindings)]
+            ;; (prn :q q :bindings bindings :r-binds r-binds)
+            (select-join* ds (cons q patterns) r-binds)))
         queries))))
 
 (defn filter-results
