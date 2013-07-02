@@ -2,7 +2,8 @@
   (:require
    [thi.ng.triplestore
     [api :as api]
-    [util :as util]]))
+    [util :as util]
+    [namespaces :as ns]]))
 
 (defn index-entity
   [{idx :idx :as store} e]
@@ -111,7 +112,7 @@
     [this id] (update-in this [:models] dissoc id)))
 
 (defn make-mem-store
-  [& {:as ns}] (MemStore. (merge api/*default-ns-map* ns) {} {} {} {}))
+  [& {:as ns}] (MemStore. (merge ns/*default-ns-map* ns) {} {} {} {}))
 
 (defn make-mem-dataset
   [& ns] (MemDataset. {:default (apply make-mem-store ns)}))
@@ -127,4 +128,3 @@
 (defn select-from
   [[s p o] triples]
   (api/select (apply add-many (make-mem-store) triples) s p o))
-
