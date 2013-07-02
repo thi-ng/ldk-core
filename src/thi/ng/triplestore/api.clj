@@ -4,14 +4,22 @@
   (add-statement [this s p o] [this g s p o])
   (remove-statement [this s p o] [this g s p o])
   (select [this s p o] [this g s p o])
+  (subjects [this])
+  (predicates [this])
+  (objects [this])
   (subject? [this x])
   (predicate? [this x])
   (object? [this x])
-  (indexed? [this x]))
+  (indexed? [this x])
+  (prefix-map [this])
+  (union [this others])
+  (intersection [this others])
+  (difference [this others]))
 
 (defprotocol PDataset
   (add-model [this id m])
-  (remove-model [this id]))
+  (remove-model [this id])
+  (get-model [this id]))
 
 (defprotocol PIndexable
   (index-value [this]))
@@ -37,3 +45,11 @@
   (index-value [this] this)
   nil
   (index-value [this] this))
+
+(defn add-many
+  [store & statements]
+  (reduce #(apply add-statement % %2) store statements))
+
+(defn remove-many
+  [store & statements]
+  (reduce #(apply remove-statement % %2) store statements))
