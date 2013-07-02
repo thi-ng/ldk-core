@@ -5,9 +5,11 @@
     [util :as util]
     [namespaces :as ns]]))
 
+(def ^:dynamic *hashimpl* (comp hash api/index-value))
+
 (defn index-entity
   [{idx :idx :as store} e]
-  (let [h (hash e)]
+  (let [h (*hashimpl* e)]
     (if ((:idx store) e)
       [store h]
       [(assoc-in store [:idx h] e) h])))
@@ -29,8 +31,8 @@
     (update-in store [:idx] dissoc e)
     store))
 
-(defn triple-sp* [store s p] #(vector s p ((:idx store) %)))
-(defn triple-*po [store p o] #(vector ((:idx store) %) p o))
+(defn triple-sp* [{:keys [idx]} s p] #(vector s p (idx %)))
+(defn triple-*po [{:keys [idx]} p o] #(vector (idx %) p o))
 
 (defn select-seq
   ([coll triple-fn & [f-fn]]
@@ -49,8 +51,8 @@
           (update-in [:pos ph oh] util/eset sh)
           (update-in [:ops oh ph] util/eset sh))))
   (remove-statement [this s p o]
-    (let [[sh ph oh] (map hash [s p o])
-          props ((:spo this) sh)
+    (let [[sh ph oh] (map *hashimpl* [s p o])
+          props (spo sh)
           obj (get props ph)]
       (if (get obj oh)
         (-> this
@@ -62,7 +64,7 @@
             (prune-entity-index oh))
         this)))
   (select [{idx :idx :as this} s p o]
-    (let [[sh ph oh] (map hash [s p o])]
+    (let [[sh ph oh] (map *hashimpl* [s p o])]
       (if s
         (if p
           (if o
