@@ -12,9 +12,11 @@
       (if (and s p o)
         (api/add-statement
          %
-         (n/make-resource s)
-         (n/make-resource p)
-         (if (neg? (.indexOf o ":")) (n/make-literal o) (n/make-resource o)))
+         (or (api/indexed? % s) (n/make-resource s))
+         (or (api/indexed? % p) (n/make-resource p))
+         (if (neg? (.indexOf o ":"))
+           (or (api/indexed? % o) (n/make-literal o))
+           (or (api/indexed? % o) (n/make-resource o))))
         %))
    store
    (filter not-empty (str/split-lines (slurp src)))))

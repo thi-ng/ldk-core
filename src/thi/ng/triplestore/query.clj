@@ -26,12 +26,12 @@
 
 (defn produce-queries-with-bound-vars
   "Takes a triple pattern (possibly with variables) and a map of
-  possible values for each var. Produces lazy seq of resulting triple
-  query patterns using cartesian product of all var values.
+  possible value sets (or single values) for each var. Produces lazy seq
+  of resulting triple query patterns using cartesian product of all values.
 
       (produce-queries-with-bound-vars
         [?a :type ?b]
-        {?a [\"me\" \"you\"] ?b #{\"foo\" \"bar\"})
+        {?a #{\"me\" \"you\"} ?b #{\"foo\" \"bar\"})
       => ((\"me\" :type \"foo\") (\"me\" :type \"bar\")
           (\"you\" :type \"foo\") (\"you\" :type \"bar\"))"
   [[s p o] bindings]
@@ -49,18 +49,22 @@
   [r t v idx] (if v (assoc r v (t idx)) r))
 
 (defn triple-verifier
-  [[ts tp to] [syms symp symo]]
+  "Takes a triple pattern (potentially with vars) and a 3-elem boolean
+  vector to indicate which SPO is a var. Returns fn which accepts a
+  result triple and returns false if any of the vars clash (e.g. a var
+  is used multiple times but result has different values)."
+  [[ts tp to] [vars varp varo]]
   (fn [[rs rp ro]]
     (cond
-     (and syms symp symo) (cond
+     (and vars varp varo) (cond
                            (= ts tp to) (= rs rp ro)
                            (= ts tp) (and (= rs rp) (not= rs ro))
                            (= ts to) (and (= rs ro) (not= rs rp))
                            (= tp to) (and (= rp ro) (not= rs rp))
                            :default true)
-     (and syms symp) ((if (= ts tp) = not=) rs rp)
-     (and syms symo) ((if (= ts to) = not=) rs ro)
-     (and symp symo) ((if (= tp to) = not=) rp ro)
+     (and vars varp) ((if (= ts tp) = not=) rs rp)
+     (and vars varo) ((if (= ts to) = not=) rs ro)
+     (and varp varo) ((if (= tp to) = not=) rp ro)
      :default true)))
 
 (defn select-with-bindings
@@ -88,9 +92,6 @@
         bmap (if (bindings p) (assoc bmap :p p) bmap)
         bmap (if (bindings o) (assoc bmap :o o) bmap)
         queries (produce-queries-with-bound-vars t bindings)]
-    ;;(prn :queries queries)
-    ;;(prn :bmap bmap)
-    ;;(prn :bindings bindings)
     (map #(vector % bmap) queries)))
 
 (defn sort-patterns
@@ -117,7 +118,7 @@
   (let [res (select-with-bindings ds p bmap)]
     (when (seq res)
       (let [p-vars (util/filter-tree qvar? p)
-            new-binds (into #{} (map #(select-keys % p-vars) res))]
+            new-binds (set (map #(select-keys % p-vars) res))]
         ;; (prn :bindings bindings)
         ;; (prn :new-bind new-binds)
         ;; (prn :b-combos b-combos)
@@ -131,14 +132,15 @@
                (filter (complement nil?))))))))
 
 (defn select-join
-  [ds [p & patterns] bindings]
-  (let [queries (build-queries-with-prebounds p bindings)]
-    ;;(prn :queries queries)
-    (mapcat
-     (fn [q]
-       ;; (prn :q q :bindings bindings)
-       (select-join* ds (cons q patterns) bindings))
-     queries)))
+  ([ds patterns] (select-join ds (sort-patterns patterns) {}))
+  ([ds [p & patterns] bindings]
+     (let [queries (build-queries-with-prebounds p bindings)]
+       ;;(prn :queries queries)
+       (mapcat
+        (fn [q]
+          ;; (prn :q q :bindings bindings)
+          (select-join* ds (cons q patterns) bindings))
+        queries))))
 
 (defn filter-results
   [res vars]
