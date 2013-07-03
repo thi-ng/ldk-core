@@ -10,9 +10,11 @@
   (map (fn [{:syms [?a ?b ?r]}] [?b ?r ?a])
        (q/select-join-from ds '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]]))
 
-  (q/infer ds '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] '[[?b ?r ?a]])
-  (q/infer ds '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b]])
-  (q/infer ds '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] '[[?x ?b ?y]])
+  (inf/infer ds '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] '[[?b ?r ?a]])
+  (inf/infer ds '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b]])
+  (inf/infer ds '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] '[[?x ?b ?y]])
+  (inf/infer ds '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r]])
+  (inf/infer ds '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d]])
   )
 
 (defn infer
