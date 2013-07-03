@@ -84,6 +84,7 @@
             ;; s p nil
             (when-let [objects (get-in spo [sh ph])]
               (map (triple-sp* this (idx sh) (idx ph)) objects)))
+          ;; s nil o / s nil nil
           (when-let [subjects (spo sh)]
             (select-seq subjects #(triple-sp* this (idx sh) (idx %)) (when o #(= oh %)))))
         (if p

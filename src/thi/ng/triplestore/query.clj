@@ -71,10 +71,10 @@
   ([store t] (select-with-bindings store t {}))
   ([store [ts tp to :as t] b]
      (let [[syms symp symo :as sym] (map symbol? t)
-           [qs b] (if syms [nil (assoc b :s ts)] [ts b])
-           [qp b] (if symp [nil (assoc b :p tp)] [tp b])
-           [qo b] (if symo [nil (assoc b :o to)] [to b])
-           {:keys [s p o]} b
+           [qs b] (if syms [nil (assoc b 0 ts)] [ts b])
+           [qp b] (if symp [nil (assoc b 1 tp)] [tp b])
+           [qo b] (if symo [nil (assoc b 2 to)] [to b])
+           {s 0 p 1 o 2} b
            verify (triple-verifier t sym)]
        (->> (api/select store qs qp qo)
             (map
@@ -88,9 +88,9 @@
 
 (defn build-queries-with-prebounds
   [[s p o :as t] bindings]
-  (let [bmap (if (bindings s) {:s s} {})
-        bmap (if (bindings p) (assoc bmap :p p) bmap)
-        bmap (if (bindings o) (assoc bmap :o o) bmap)
+  (let [bmap (if (bindings s) {0 s} {})
+        bmap (if (bindings p) (assoc bmap 1 p) bmap)
+        bmap (if (bindings o) (assoc bmap 2 o) bmap)
         queries (produce-queries-with-bound-vars t bindings)]
     (map #(vector % bmap) queries)))
 
@@ -104,29 +104,30 @@
          (sort-by (fn [[c v]] (- (* c 4) (count (filter singles v)))))
          (map #(nth % 2)))))
 
+;; TODO add support for owl:sameAs aliases?
 (defn unique-var-bindings?
   [bindings]
   (when (= (count bindings)
            (count (set (concat (vals bindings)))))
     bindings))
 
-(defn restrict-bindings
+(defn restrict-multi-bindings
   [p bmap bindings]
   (let [p (vec p)]
     (reduce
-     (fn [b [k v]]
-       (if (set? (b v)) (assoc b v (p ({:s 0 :p 1 :o 2} k))) b))
+     (fn [b [k v]] (if (set? (b v)) (assoc b v (p k)) b))
      bindings bmap)))
 
 (declare select-join)
 
 (defn select-join*
   [ds [[p bmap] & patterns] bindings]
-  ;; (prn :p p :bind bindings)
+  ;; (prn :p p :bmap bmap :bind bindings)
   (let [res (select-with-bindings ds p bmap)]
     (when (seq res)
       (let [p-vars (util/filter-tree qvar? p)
-            new-binds (set (map #(select-keys % p-vars) res))]
+            ;;new-binds (set (map #(select-keys % p-vars) res))
+            new-binds (map #(select-keys % p-vars) res)]
         ;; (prn :bindings bindings)
         ;; (prn :new-bind new-binds)
         ;; (prn :b-combos b-combos)
@@ -135,8 +136,8 @@
            #(when-let [b (unique-var-bindings? (merge bindings %))]
               (select-join ds patterns b))
            new-binds)
-          (->> res
-               (map #(unique-var-bindings? (merge bindings (select-keys % p-vars))))
+          (->> new-binds
+               (map #(unique-var-bindings? (merge bindings %)))
                (filter (complement nil?))))))))
 
 (defn select-join
@@ -146,16 +147,18 @@
        ;; (prn :queries queries)
        (mapcat
         (fn [[p bmap :as q]]
-          (let [r-binds (restrict-bindings p bmap bindings)]
+          (let [r-binds (restrict-multi-bindings p bmap bindings)]
             ;; (prn :q q :bindings bindings :r-binds r-binds)
             (select-join* ds (cons q patterns) r-binds)))
         queries))))
 
-(defn filter-results
+(defn filter-result-vars
   [res vars]
+  (let [vars (if (coll? vars) vars [vars])]
+    (map #(select-keys % vars) res)))
+
+(defn format-results
+  [results]
   (map
-   #(into {}
-          (map (fn [[k v]]
-                 [(-> k name (subs 1) keyword) (if (set? v) (first v) v)])
-               (select-keys % vars)))
-   res))
+   (fn [r] (zipmap (map #(-> % name (subs 1) keyword) (keys r)) (vals r)))
+   results))
