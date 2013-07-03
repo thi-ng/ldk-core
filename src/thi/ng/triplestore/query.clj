@@ -21,7 +21,11 @@
   [results vars]
   (reduce
    (fn [vmap t]
-     (reduce (fn [vmap v] (if (nil? (t v)) vmap (update-in vmap [v] util/eset (t v)))) vmap vars))
+     (reduce
+      (fn [vmap v]
+        (if (nil? (t v))
+          vmap
+          (update-in vmap [v] util/eset (t v)))) vmap vars))
    {} results))
 
 (defn produce-queries-with-bound-vars

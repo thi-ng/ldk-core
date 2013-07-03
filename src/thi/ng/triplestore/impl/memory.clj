@@ -107,9 +107,10 @@
   (union [this others]
     (reduce
      (fn [this m]
-       (reduce (fn [this [s p o]] (api/add-statement this s p o))
-               (update-in this [:ns] merge (api/prefix-map m))
-               (api/select m nil nil nil)))
+       (reduce
+        (fn [this [s p o]] (api/add-statement this s p o))
+        (update-in this [:ns] merge (api/prefix-map m))
+        (api/select m nil nil nil)))
      this (if (satisfies? api/PModel others) [others] others)))
   (intersection [this others]
     (let [others (if (satisfies? api/PModel others) [others] others)]
@@ -164,12 +165,12 @@
   (get-model [this id]
     (models id)))
 
-(defn make-mem-store
+(defn make-store
   [& {:as ns}] (MemStore. (merge ns/*default-ns-map* ns) {} {} {} {}))
 
-(defn make-mem-dataset
-  [& ns] (MemDataset. {:default (apply make-mem-store ns)}))
+(defn make-dataset
+  [& ns] (MemDataset. {:default (apply make-store ns)}))
 
 (defn select-from
   [[s p o] triples]
-  (api/select (apply api/add-many (make-mem-store) triples) s p o))
+  (api/select (apply api/add-many (make-store) triples) s p o))
