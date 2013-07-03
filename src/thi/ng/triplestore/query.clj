@@ -134,15 +134,15 @@
         (if (seq patterns)
           (mapcat
            #(when-let [b (unique-var-bindings? (merge bindings %))]
-              (select-join ds patterns b))
+              (select-join patterns b))
            new-binds)
           (->> new-binds
                (map #(unique-var-bindings? (merge bindings %)))
                (filter (complement nil?))))))))
 
 (defn select-join
-  ([ds patterns] (select-join ds (sort-patterns patterns) {}))
-  ([ds [p & patterns] bindings]
+  ([patterns] (select-join (sort-patterns patterns) {}))
+  ([[[ds & p] & patterns] bindings]
      (let [queries (build-queries-with-prebounds p bindings)]
        ;; (prn :queries queries)
        (mapcat
@@ -151,6 +151,11 @@
             ;; (prn :q q :bindings bindings :r-binds r-binds)
             (select-join* ds (cons q patterns) r-binds)))
         queries))))
+
+(defn select-join-from
+  ([ds triples] (select-join-from ds triples {}))
+  ([ds triples bindings]
+     (select-join (map #(cons ds %) (sort-patterns triples)) bindings)))
 
 (defn filter-result-vars
   [res vars]
