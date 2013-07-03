@@ -158,7 +158,7 @@
   (objects [this]
     (set (mapcat api/objects (vals models))))
   api/PDataset
-  (add-model [this id m]
+  (update-model [this id m]
     (assoc-in this [:models id] m))
   (remove-model [this id]
     (update-in this [:models] dissoc id))

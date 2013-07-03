@@ -1,8 +1,7 @@
 (ns thi.ng.triplestore.io
   (:require
    [thi.ng.triplestore
-    [api :as api]
-    [nodes :as n]]
+    [api :as api]]
    [clojure.string :as str]))
 
 (defn parse-triples
@@ -12,11 +11,11 @@
       (if (and s p o)
         (api/add-statement
          %
-         (or (api/indexed? % s) (n/make-resource s))
-         (or (api/indexed? % p) (n/make-resource p))
+         (or (api/indexed? % s) (api/make-resource s))
+         (or (api/indexed? % p) (api/make-resource p))
          (if (neg? (.indexOf o ":"))
-           (or (api/indexed? % o) (n/make-literal o))
-           (or (api/indexed? % o) (n/make-resource o))))
+           (or (api/indexed? % o) (api/make-literal o))
+           (or (api/indexed? % o) (api/make-resource o))))
         %))
    store
    (filter not-empty (str/split-lines (slurp src)))))
