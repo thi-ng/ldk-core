@@ -1,7 +1,7 @@
 (ns thi.ng.triplestore.inference
   (:require
    [thi.ng.triplestore
-    [api: as api]
+    [api :as api]
     [query :as q]]
    [clojure
     [set :as set]]))
@@ -22,10 +22,17 @@
        (mapcat
         (fn [res]
           (map
-           (fn [[s p o]]
-             [(if (symbol? s) (res s) s)
-              (if (symbol? p) (res p) p)
-              (if (symbol? o) (res o) o)])
+           (fn [t]
+             (condp = (count t)
+               3 (let [[s p o] t]
+                   [(if (symbol? s) (res s) s)
+                    (if (symbol? p) (res p) p)
+                    (if (symbol? o) (res o) o)])
+               4 (let [[g s p o] t]
+                   [g (if (symbol? s) (res s) s)
+                    (if (symbol? p) (res p) p)
+                    (if (symbol? o) (res o) o)])
+               nil))
            targets)))
        (set)))
 
@@ -39,4 +46,4 @@
           (apply api/add-many ds new-inf)
           rule targets
           (set/union inf new-inf))
-         inf))))
+         [ds inf]))))
