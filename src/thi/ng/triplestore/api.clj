@@ -123,6 +123,7 @@
           (map-indexed
            (fn [i v]
              [node (make-resource (str (:membership RDF) (inc i))) v]))
+          (cons [node (:type RDF) (c-type RDF)])
           (apply add-many store))))
 
 (defn make-bag
@@ -152,9 +153,21 @@
 ;; TODO fail if node already exists
 (defn reify-statement
   ([store triple] (reify-statement store (make-blank-node) triple))
-  ([store node [s p o]]
-     (-> store
-         (add-statement node (:type RDF) (:statement RDF))
-         (add-statement node (:subject RDF) s)
-         (add-statement node (:predicate RDF) p)
-         (add-statement node (:object RDF) o))))
+  ([store node [s p o] & extra]
+     (let [store (-> store
+                     (add-statement node (:type RDF) (:statement RDF))
+                     (add-statement node (:subject RDF) s)
+                     (add-statement node (:predicate RDF) p)
+                     (add-statement node (:object RDF) o))]
+       (apply add-many store (map #(cons node %) extra)))))
+
+(defn reify-as-group
+  ([store triples extra] (reify-as-group store (make-blank-node) triples extra))
+  ([store node triples extra]
+     (let [[store items] (reduce
+                          (fn [[ds nodes] t]
+                            (let [n (make-blank-node)]
+                              [(reify-statement ds n t) (conj nodes n)]))
+                          [store []] triples)
+           store (make-bag store node items)]
+       (apply add-many store (map #(cons node %) extra)))))
