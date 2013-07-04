@@ -13,7 +13,9 @@
    [:range '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r]]]
    [:domain '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d] [?d "rdf:type" "owl:Class"]]]
    [:sub-class '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b] [?a "rdf:type" "owl:Class"]]]
-   [:owl-thing '[[?a "rdf:type" "owl:Class"]] '[[?a "rdfs:subClassOf" "owl:Thing"]]]])
+   [:owl-thing '[[?a "rdf:type" "owl:Class"]] '[[?a "rdfs:subClassOf" "owl:Thing"]]]
+   [:trans-property '[[?a "rdf:type" "owl:TransitiveProperty"] [?x ?a ?y] [?y ?a ?z]] '[[?x ?a ?z]]]
+   ])
 
 (defn infer
   [ds rule targets]
