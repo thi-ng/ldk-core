@@ -157,6 +157,8 @@
     (set (mapcat api/predicates (vals models))))
   (objects [this]
     (set (mapcat api/objects (vals models))))
+  (prefix-map [this]
+    (apply merge (map api/prefix-map (vals models))))
   api/PDataset
   (update-model [this id m]
     (assoc-in this [:models id] m))
