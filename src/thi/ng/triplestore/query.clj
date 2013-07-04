@@ -171,3 +171,12 @@
   (map
    (fn [r] (zipmap (map #(-> % name (subs 1) keyword) (keys r)) (vals r)))
    results))
+
+(defn has-reification?
+  [ds [s p o]]
+  (select-join-from
+   ds
+   [['?s (:subject api/RDF) s]
+    ['?s (:predicate api/RDF) p]
+    ['?s (:object api/RDF) o]
+    ['?s (:type api/RDF) (:statement api/RDF)]]))
