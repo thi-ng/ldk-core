@@ -48,7 +48,8 @@
 (defn triples->dot
   [blanks col triples]
   (map (fn [[s p o]]
-         (apply format (str "%s -> %s[label=%s, color=\"" col "\"];\n")
+         (apply format (format "%%s -> %%s[label=%%s, color=\"%s\", fontcolor=\"%s\"];\n"
+                               col col)
                 (map #(cond
                        (string? %) (str "\"" % "\"")
                        (api/blank? %) (format "\"%04d\"" (blanks %))
@@ -58,15 +59,21 @@
                      [s o p])))
        triples))
 
+(defn dot-attribs
+  [attribs]
+  (apply str (interpose "," (map #(format "%s=\"%s\"" (name (key %)) (val %)) attribs))))
+
 (defn write-dot
-  [ds cols f]
+  [ds {:keys [nodes edges models]} f]
   (let [blanks (zipmap (->> (api/select ds nil nil nil)
                             (mapcat identity)
                             (filter #(when-not (string? %) (api/blank? %)))
                             (set))
                        (range))]
-    (->> (mapcat (fn [[k v]] (triples->dot blanks (cols k) (api/select ds k nil nil nil))) (:models ds))
+    (->> (mapcat (fn [[k v]] (triples->dot blanks (models k) (api/select ds k nil nil nil))) (:models ds))
          (sort)
          (apply str)
-         (format "digraph g {\n%s}")
+         (format "digraph g {\n\nnode[%s];\nedge[%s];\n\n%s}"
+                 (dot-attribs nodes)
+                 (dot-attribs edges))
          (spit f))))
