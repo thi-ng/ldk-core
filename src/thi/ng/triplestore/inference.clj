@@ -6,16 +6,14 @@
    [clojure
     [set :as set]]))
 
-(comment
-  (map (fn [{:syms [?a ?b ?r]}] [?b ?r ?a])
-       (q/select-join-from ds '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]]))
-
-  (inf/infer ds '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] '[[?b ?r ?a]])
-  (inf/infer ds '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b]])
-  (inf/infer ds '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] '[[?x ?b ?y]])
-  (inf/infer ds '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r]])
-  (inf/infer ds '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d]])
-  )
+(def rules
+  [[:sub-property '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] [['?x '?b '?y]]]
+   [:sym-property '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] [['?b '?r '?a]]]
+   [:inv-property '[[?r "owl:inverseOf" ?i] [?a ?r ?b]] [['?b '?i '?a] ['?i "owl:inverseOf" '?r]]]
+   [:range '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r]]]
+   [:domain '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d] [?d "rdf:type" "owl:Class"]]]
+   [:sub-class '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b] [?a "rdf:type" "owl:Class"]]]
+   [:owl-thing '[[?a "rdf:type" "owl:Class"]] '[[?a "rdfs:subClassOf" "owl:Thing"]]]])
 
 (defn infer
   [ds rule targets]
@@ -42,10 +40,21 @@
   ([ds rule targets]
      (infer-all ds rule targets #{}))
   ([ds rule targets inf]
-     (let [new-inf (set/difference (infer ds rule targets) inf)]
+     (let [new-inf (->> inf
+                        (set/difference (infer ds rule targets))
+                        (filter
+                         #(nil? (seq (apply api/select ds (api/remove-context %))))))]
+       ;;(clojure.pprint/pprint new-inf)
        (if (seq new-inf)
          (recur
           (apply api/add-many ds new-inf)
           rule targets
           (set/union inf new-inf))
-         [ds inf]))))
+         [ds (map api/remove-context inf)]))))
+
+(defn infer-with-annotations
+  [ds g rule targets annos]
+  (let [targets (map #(cons g %) targets)
+        [ds inferred] (infer-all ds rule targets)]
+    (api/update-model
+     ds g (api/reify-as-group (api/get-model ds g) inferred annos))))

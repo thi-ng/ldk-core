@@ -80,6 +80,9 @@
   PIndexable
   (index-value [this] id))
 
+(defn remove-context
+  [t] (if (= 4 (count t)) (rest t) t))
+
 (defn make-resource
   [uri] (NodeURI. uri))
 
