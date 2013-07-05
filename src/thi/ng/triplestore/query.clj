@@ -125,7 +125,7 @@
 (declare select-join)
 
 (defn select-join*
-  [ds [[p bmap] & patterns] bindings]
+  [ds [[p bmap] & patterns] bindings flt]
   ;; (prn :p p :bmap bmap :bind bindings)
   (let [res (select-with-bindings ds p bmap)]
     (when (seq res)
@@ -138,28 +138,29 @@
         (if (seq patterns)
           (mapcat
            #(when-let [b (unique-var-bindings? (merge bindings %))]
-              (select-join patterns b))
+              (select-join patterns b flt))
            new-binds)
-          (->> new-binds
-               (map #(unique-var-bindings? (merge bindings %)))
-               (filter (complement nil?))))))))
+          (let [bindings (->> new-binds
+                              (map #(unique-var-bindings? (merge bindings %)))
+                              (filter (complement nil?)))]
+            (when (or (nil? flt) (flt bindings)) bindings)))))))
 
 (defn select-join
-  ([patterns] (select-join (sort-patterns patterns) {}))
-  ([[[ds & p] & patterns] bindings]
+  ([patterns flt] (select-join (sort-patterns patterns) {} flt))
+  ([[[ds & p] & patterns] bindings flt]
      (let [queries (build-queries-with-prebounds p bindings)]
        ;; (prn :queries queries)
        (mapcat
         (fn [[p bmap :as q]]
           (let [r-binds (restrict-multi-bindings p bmap bindings)]
             ;; (prn :q q :bindings bindings :r-binds r-binds)
-            (select-join* ds (cons q patterns) r-binds)))
+            (select-join* ds (cons q patterns) r-binds flt)))
         queries))))
 
 (defn select-join-from
-  ([ds triples] (select-join-from ds triples {}))
-  ([ds triples bindings]
-     (select-join (map #(cons ds %) (sort-patterns triples)) bindings)))
+  ([ds triples flt] (select-join-from ds triples {} flt))
+  ([ds triples bindings flt]
+     (select-join (map #(cons ds %) (sort-patterns triples)) bindings flt)))
 
 (defn filter-result-vars
   [res vars]
@@ -169,7 +170,7 @@
 (defn format-results
   [results]
   (map
-   (fn [r] (zipmap (map #(-> % name (subs 1) keyword) (keys r)) (vals r)))
+   (fn [r] (into (sorted-map) (zipmap (map #(-> % name (subs 1) keyword) (keys r)) (map api/label (vals r)))))
    results))
 
 (defn has-reification?
@@ -180,3 +181,8 @@
     ['?s (:predicate api/RDF) p]
     ['?s (:object api/RDF) o]
     ['?s (:type api/RDF) (:statement api/RDF)]]))
+
+(defn not-exists
+  [ds patterns]
+  (fn [bindings]
+    (not (some #(let [r (select-join-from ds patterns % nil)] (seq r)) bindings))))
