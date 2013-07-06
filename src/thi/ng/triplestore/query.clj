@@ -56,20 +56,26 @@
   "Takes a triple pattern (potentially with vars) and a 3-elem boolean
   vector to indicate which SPO is a var. Returns fn which accepts a
   result triple and returns false if any of the vars clash (e.g. a var
-  is used multiple times but result has different values)."
+  is used multiple times but result has different values in each position
+  or likewise, if different vars relate to same values)."
   [[ts tp to] [vars varp varo]]
-  (fn [[rs rp ro]]
-    (cond
-     (and vars varp varo) (cond
-                           (= ts tp to) (= rs rp ro)
-                           (= ts tp) (and (= rs rp) (not= rs ro))
-                           (= ts to) (and (= rs ro) (not= rs rp))
-                           (= tp to) (and (= rp ro) (not= rs rp))
-                           :default true)
-     (and vars varp) ((if (= ts tp) = not=) rs rp)
-     (and vars varo) ((if (= ts to) = not=) rs ro)
-     (and varp varo) ((if (= tp to) = not=) rp ro)
-     :default true)))
+  (cond
+   (and vars varp varo) (cond
+                         (= ts tp to) (fn [[rs rp ro]] (= rs rp ro))
+                         (= ts tp) (fn [[rs rp ro]] (and (= rs rp) (not= rs ro)))
+                         (= ts to) (fn [[rs rp ro]] (and (= rs ro) (not= rs rp)))
+                         (= tp to) (fn [[rs rp ro]] (and (= rp ro) (not= rs rp)))
+                         :default (fn [_] true))
+   (and vars varp) (if (= ts tp)
+                     (fn [[rs rp]] (= rs rp))
+                     (fn [[rs rp]] (not= rs rp)))
+   (and vars varo) (if (= ts to)
+                     (fn [[rs _ ro]] (= rs ro))
+                     (fn [[rs _ ro]] (not= rs ro)))
+   (and varp varo) (if (= tp to)
+                     (fn [[_ rp ro]] (= rp ro))
+                     (fn [[_ rp ro]] (not= rp ro)))
+   :default (fn [_] true)))
 
 (defn select-with-bindings
   ([store t] (select-with-bindings store t {} true))
@@ -161,20 +167,38 @@
   (let [vars (if (coll? vars) vars [vars])]
     (map #(select-keys % vars) res)))
 
-(defn format-results
+(defn format-result-vars
   [results]
   (map
-   (fn [r] (into (sorted-map) (zipmap (map #(-> % name (subs 1) keyword) (keys r)) (map api/label (vals r)))))
+   (fn [r] (into (sorted-map) (map (fn [[k v]] [(-> k name (subs 1) keyword) v]) r)))
    results))
+
+(defn select-reified
+  [ds]
+  (let [res (select-join-from
+             ds [['?s (:type api/RDF) (:statement api/RDF)]
+                 ['?s (:subject api/RDF) '?subj]
+                 ['?s (:predicate api/RDF) '?pred]
+                 ['?s (:object api/RDF) '?obj]
+                 ['?s '?p '?o]]
+             (fn [bnd] (filter #(not= (% '?p) (:type api/RDF)) bnd)))]
+    (->> res
+         (group-by #(get % '?s))
+         (map
+          (fn [[id triples]]
+            (let [{s '?subj p '?pred o '?obj} (first triples)]
+              [id {:statement [s p o]
+                   :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
+         (into {}))))
 
 (defn has-reification?
   [ds [s p o]]
   (select-join-from
    ds
-   [['?s (:subject api/RDF) s]
+   [['?s (:type api/RDF) (:statement api/RDF)]
+    ['?s (:subject api/RDF) s]
     ['?s (:predicate api/RDF) p]
-    ['?s (:object api/RDF) o]
-    ['?s (:type api/RDF) (:statement api/RDF)]]
+    ['?s (:object api/RDF) o]]
    nil))
 
 (defn not-exists
