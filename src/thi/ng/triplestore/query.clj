@@ -72,8 +72,8 @@
      :default true)))
 
 (defn select-with-bindings
-  ([store t] (select-with-bindings store t {}))
-  ([store [ts tp to :as t] b]
+  ([store t] (select-with-bindings store t {} true))
+  ([store [ts tp to :as t] b include-triple?]
      (let [[syms symp symo :as sym] (map symbol? t)
            [qs b] (if syms [nil (assoc b 0 ts)] [ts b])
            [qp b] (if symp [nil (assoc b 1 tp)] [tp b])
@@ -84,7 +84,7 @@
             (map
              (fn [t]
                (when (verify t)
-                 (-> {}
+                 (-> (if include-triple? {:triple t}  {})
                      (inject-res-var t s 0)
                      (inject-res-var t p 1)
                      (inject-res-var t o 2)))))
@@ -127,7 +127,7 @@
 (defn select-join*
   [ds [[p bmap] & patterns] bindings flt]
   ;; (prn :p p :bmap bmap :bind bindings)
-  (let [res (select-with-bindings ds p bmap)]
+  (let [res (select-with-bindings ds p bmap false)]
     (when (seq res)
       (if (seq patterns)
         (mapcat
@@ -174,7 +174,8 @@
    [['?s (:subject api/RDF) s]
     ['?s (:predicate api/RDF) p]
     ['?s (:object api/RDF) o]
-    ['?s (:type api/RDF) (:statement api/RDF)]]))
+    ['?s (:type api/RDF) (:statement api/RDF)]]
+   nil))
 
 (defn not-exists
   [ds patterns]
