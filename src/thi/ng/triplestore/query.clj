@@ -179,4 +179,4 @@
 (defn not-exists
   [ds patterns]
   (fn [bindings]
-    (not (some #(let [r (select-join-from ds patterns % nil)] (seq r)) bindings))))
+    (filter #(not (seq (select-join-from ds patterns % nil))) bindings)))
