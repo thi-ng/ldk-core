@@ -9,7 +9,8 @@
 (def rules
   [[:sub-property '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] [['?x '?b '?y]]]
    [:sym-property '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] [['?b '?r '?a]]]
-   [:inv-property '[[?r "owl:inverseOf" ?i] [?a ?r ?b]] [['?b '?i '?a] ['?i "owl:inverseOf" '?r]]]
+   [:inv-property-setup '[[?r "owl:inverseOf" ?i]] [['?i "owl:inverseOf" '?r]]]
+   [:inv-property '[[?r "owl:inverseOf" ?i] [?a ?r ?b]] [['?b '?i '?a]]]
    [:range '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r]]]
    [:domain '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d] [?d "rdf:type" "owl:Class"]]]
    [:sub-class '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b] [?a "rdf:type" "owl:Class"]]]
@@ -45,7 +46,7 @@
                         (set/difference (infer ds rule targets))
                         (filter
                          #(nil? (seq (apply api/select ds (api/remove-context %))))))]
-       ;;(clojure.pprint/pprint new-inf)
+       ;; (clojure.pprint/pprint new-inf)
        (if (seq new-inf)
          (recur
           (apply api/add-many ds new-inf)
