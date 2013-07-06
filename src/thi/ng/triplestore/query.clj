@@ -84,7 +84,7 @@
             (map
              (fn [t]
                (when (verify t)
-                 (-> {:triple t}
+                 (-> {}
                      (inject-res-var t s 0)
                      (inject-res-var t p 1)
                      (inject-res-var t o 2)))))
@@ -129,21 +129,15 @@
   ;; (prn :p p :bmap bmap :bind bindings)
   (let [res (select-with-bindings ds p bmap)]
     (when (seq res)
-      (let [p-vars (util/filter-tree qvar? p)
-            ;;new-binds (set (map #(select-keys % p-vars) res))
-            new-binds (map #(select-keys % p-vars) res)]
-        ;; (prn :bindings bindings)
-        ;; (prn :new-bind new-binds)
-        ;; (prn :b-combos b-combos)
-        (if (seq patterns)
-          (mapcat
-           #(when-let [b (unique-var-bindings? (merge bindings %))]
-              (select-join patterns b flt))
-           new-binds)
-          (let [bindings (->> new-binds
-                              (map #(unique-var-bindings? (merge bindings %)))
-                              (filter (complement nil?)))]
-            (when (or (nil? flt) (flt bindings)) bindings)))))))
+      (if (seq patterns)
+        (mapcat
+         #(when-let [b (unique-var-bindings? (merge bindings %))]
+            (select-join patterns b flt))
+         res)
+        (let [bindings (->> res
+                            (map #(unique-var-bindings? (merge bindings %)))
+                            (filter (complement nil?)))]
+          (if flt (flt bindings) bindings))))))
 
 (defn select-join
   ([patterns flt] (select-join (sort-patterns patterns) {} flt))

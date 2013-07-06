@@ -19,8 +19,7 @@
 
 (defn infer
   [ds rule targets]
-  (->> rule
-       (q/select-join-from ds)
+  (->> (q/select-join-from ds rule nil)
        (mapcat
         (fn [res]
           (map
