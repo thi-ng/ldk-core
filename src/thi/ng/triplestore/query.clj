@@ -140,9 +140,9 @@
      q queries)))
 
 (defn select-join*
-  [q [r & rmore] flt]
+  [q [r & more] flt]
   (if r
-    (lazy-seq (cons r (select-join* q rmore flt)))
+    (lazy-seq (cons r (select-join* q more flt)))
     (when-let [pq (peek q)]
       (let [[ds [[p bmap] & patterns] bindings] pq
             res (select-with-bindings ds p bmap false)]
@@ -189,8 +189,7 @@
   ([ds] (select-reified ds nil))
   ([ds triple]
      (let [bindings (->> triple
-                         (mapcat #(when-not (nil? %2) [[% %2]])
-                                 '[?subj ?pred ?obj])
+                         (map #(when-not (nil? %2) [% %2]) '[?subj ?pred ?obj])
                          (into {}))
            res (select-join-from
                 ds [['?s (:type api/RDF) (:statement api/RDF)]
