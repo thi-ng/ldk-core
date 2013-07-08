@@ -32,9 +32,10 @@
          (map (fn [t]
                 (apply format "%s %s %s .\n"
                        (map #(cond
-                              (string? %) %
+                              (string? %) (str "\"" % "\"")
                               (api/blank? %) (format "_:b%04d" (blanks %))
-                              (api/uri? %) (api/uri %)
+                              (api/uri? %) (let [u (api/uri %)]
+                                             (if (.startsWith u "http") (str "<" u ">") u))
                               (not (api/plain-literal? %)) (format "\"%s\"@%s" (:label %) (:lang %))
                               :default (str "\"" (:label %) "\""))
                             t))))
