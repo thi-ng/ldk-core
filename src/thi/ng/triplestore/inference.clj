@@ -40,9 +40,9 @@
            targets)))
        (set)))
 
-(defn infer-all
+(defn infer-rule
   ([ds rule targets]
-     (infer-all ds rule targets #{}))
+     (infer-rule ds rule targets #{}))
   ([ds rule targets inf]
      (let [new-inf (->> inf
                         (set/difference (infer ds rule targets))
@@ -58,27 +58,48 @@
 
 (defn infer-rules
   "Takes a PModel or PDataset, a number of rule specs and applies
-  infer-all to all rules over `n` passes. Accepts an optional graph
-  name `g` as target for inferred triples."
+  infer-rule to all rules over `n` passes. Accepts an optional graph
+  name `g` as target for inferred triples. Returns 2-elem vector of
+  [updated-model inf-map] where inf-map is a map of triples with rule
+  IDs as their keys."
   ([ds rules num-passes]
      (infer-rules ds nil rules num-passes))
   ([ds g rules num-passes]
-     (let [rules (if g (map (fn [[id r t]] [id r (map #(cons :inf %) t)]) rules) rules)]
-       (loop [ds ds i num-passes]
-         (if (zero? i) ds
+     (let [rules (if g (map (fn [[id r t]] [id r (map #(cons g %) t)]) rules) rules)]
+       (loop [state [ds {}] i num-passes]
+         (if (zero? i) state
              (recur
               (reduce
-               (fn [ds [id rule targets]]
-                 (first (infer-all ds rule targets)))
-               ds rules)
+               (fn [[ds inf] [id rule targets]]
+                 (let [[ds new-inf] (infer-rule ds rule targets)
+                       inf (update-in inf [id] #(into (or % #{}) new-inf))]
+                   [ds inf]))
+               state rules)
               (dec i)))))))
 
 (defn infer-with-annotations
-  "Applies infer-all to the given rule and then reifies inferred
+  "Applies infer-rule to the given rule and then reifies inferred
   triples using reifiy-as-group with given additional PO couples to
-  describe group."
-  [ds g rule targets annos]
-  (let [targets (map #(cons g %) targets)
-        [ds inferred] (infer-all ds rule targets)]
-    (api/update-model
-     ds g (api/reify-as-group (api/get-model ds g) inferred annos))))
+  describe group. Returns 2-elem vector of [updated-model inferred]"
+  ([ds rule targets annos]
+     (let [[ds inferred] (infer-rule ds rule targets)]
+       [(api/reify-as-group ds inferred annos) inferred]))
+  ([ds g rule targets annos]
+     (let [[ds inferred] (infer-rule ds rule (map #(cons g %) targets))]
+       [(api/update-model
+         ds g (api/reify-as-group (api/get-model ds g) inferred annos))
+        inferred])))
+
+(defn infer-rules-with-annotations
+  ([ds rules anno-fn num-passes]
+     (infer-rules-with-annotations ds nil rules anno-fn num-passes))
+  ([ds g rules anno-fn num-passes]
+     (let [[ds inf-map] (infer-rules ds g rules num-passes)
+           ds (reduce
+               (fn [ds [id triples]]
+                 (if g
+                   (api/update-model
+                    ds g (api/reify-as-group (api/get-model ds g) triples (anno-fn id triples)))
+                   (api/reify-as-group ds triples (anno-fn id triples))))
+               ds inf-map)]
+       [ds inf-map])))
