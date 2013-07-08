@@ -7,13 +7,15 @@
     [set :as set]
     [pprint :refer [pprint]]]))
 
+(defn inject-bindings
+  [p bindings]
+  (map #(if (symbol? %) (bindings %) %) p))
+
 (defn extract-var-name
   [tree]
   (apply str (util/filter-tree string? tree)))
 
 (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
-
-(def match? #(and (map? %) (:match %)))
 
 (defn accumulate-var-values
   "Takes a seq of query result maps and a set of var names. Returns a
@@ -128,40 +130,6 @@
      (fn [b [k v]] (if (set? (b v)) (assoc b v (p k)) b))
      bindings bmap)))
 
-(declare select-join)
-
-(defn select-join*
-  [ds [[p bmap] & patterns] bindings flt]
-  ;; (prn :p p :bmap bmap :bind bindings)
-  (let [res (select-with-bindings ds p bmap false)]
-    (when (seq res)
-      (if (seq patterns)
-        (mapcat
-         #(when-let [b (unique-var-bindings? (merge bindings %))]
-            (select-join patterns b flt))
-         res)
-        (let [bindings (->> res
-                            (map #(unique-var-bindings? (merge bindings %)))
-                            (filter (complement nil?)))]
-          (if flt (flt bindings) bindings))))))
-
-(defn select-join
-  ([patterns flt] (select-join (sort-patterns patterns) {} flt))
-  ([[[ds & p] & patterns] bindings flt]
-     (let [queries (build-queries-with-prebounds p bindings)]
-       ;; (prn :queries queries)
-       (mapcat
-        (fn [[p bmap :as q]]
-          (let [r-binds (restrict-multi-bindings p bmap bindings)]
-            ;; (prn :q q :bindings bindings :r-binds r-binds)
-            (select-join* ds (cons q patterns) r-binds flt)))
-        queries))))
-
-(defn select-join-from
-  ([ds triples flt] (select-join-from ds triples {} flt))
-  ([ds triples bindings flt]
-     (select-join (map #(cons ds %) (sort-patterns triples)) bindings flt)))
-
 (defn queue-queries
   [q [[ds & p] & patterns] bindings]
   (let [queries (build-queries-with-prebounds p bindings)]
@@ -171,31 +139,38 @@
          (conj q [ds (cons patt patterns) r-binds])))
      q queries)))
 
-(defn select-join-q*
-  [q results flt]
+(defn select-join*
+  [q [r & rmore] flt]
   ;;(prn :qc (count q) :pq (drop 1 (peek q)))
-  (if-let [pq (peek q)]
-    (let [[ds [[p bmap] & patterns] bindings] pq
-          res (select-with-bindings ds p bmap false)]
-      (if (seq res)
-        (let [bindings (->> res
-                            (map #(unique-var-bindings? (merge bindings %)))
-                            (filter (complement nil?)))]
-          (if (seq patterns)
-            (recur
-             (reduce #(queue-queries % patterns %2) (pop q) bindings)
-             results flt)
-            (recur (pop q) (concat results (if flt (flt bindings) bindings)) flt)))
-        (recur (pop q) results flt)))
-    results))
+  (if r
+    (lazy-seq (cons r (select-join* q rmore flt)))
+    (when-let [pq (peek q)]
+      (let [[ds [[p bmap] & patterns] bindings] pq
+            res (select-with-bindings ds p bmap false)]
+        (if (seq res)
+          (let [bindings (->> res
+                              (map #(unique-var-bindings? (merge bindings %)))
+                              (filter (complement nil?)))]
+            (if (seq patterns)
+              (recur
+               (reduce #(queue-queries % patterns %2) (pop q) bindings)
+               clojure.lang.PersistentVector/EMPTY flt)
+              (recur (pop q) (if flt (flt bindings) bindings) flt)))
+          (recur (pop q) clojure.lang.PersistentVector/EMPTY flt))))))
 
-(defn select-join-queue
-  ([patterns] (select-join-queue patterns {} nil))
-  ([patterns flt] (select-join-queue patterns {} flt))
+(defn select-join
+  ([patterns] (select-join patterns {} nil))
+  ([patterns flt] (select-join patterns {} flt))
   ([patterns bindings flt]
-     (select-join-q*
+     (select-join*
       (queue-queries clojure.lang.PersistentQueue/EMPTY patterns bindings)
-      [] flt)))
+      clojure.lang.PersistentVector/EMPTY flt)))
+
+(defn select-join-from
+  ([ds patterns] (select-join-from ds patterns {} nil))
+  ([ds patterns flt] (select-join-from ds patterns {} flt))
+  ([ds patterns bindings flt]
+     (select-join (map #(cons ds %) (sort-patterns patterns)) bindings flt)))
 
 (defn filter-result-vars
   [res vars]
@@ -216,7 +191,7 @@
                  ['?s (:predicate api/RDF) '?pred]
                  ['?s (:object api/RDF) '?obj]
                  ['?s '?p '?o]]
-             (fn [bnd] (filter #(not= (% '?p) (:type api/RDF)) bnd)))]
+             nil)]
     (->> res
          (group-by #(get % '?s))
          (map
