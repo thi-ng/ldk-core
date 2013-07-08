@@ -87,7 +87,8 @@
   [uri] (NodeURI. uri))
 
 (defn make-blank-node
-  [] (NodeBlank. (.toString (java.util.UUID/randomUUID))))
+  ([] (NodeBlank. (.toString (java.util.UUID/randomUUID))))
+  ([id] (NodeBlank. id)))
 
 (defn make-literal
   ([label] (NodeLiteral. label nil nil))
