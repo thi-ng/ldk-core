@@ -45,6 +45,11 @@
          (apply str)
          (spit f))))
 
+(def dot-default-config
+  {:models {:default "blue" :inf "red"}
+   :edges {:fontname "Inconsolata"}
+   :nodes {:style "filled" :color "black" :fontcolor "white" :fontname "Inconsolata"}})
+
 (defn triples->dot
   [blanks col triples]
   (map (fn [[s p o]]
