@@ -141,7 +141,6 @@
 
 (defn select-join*
   [q [r & rmore] flt]
-  ;;(prn :qc (count q) :pq (drop 1 (peek q)))
   (if r
     (lazy-seq (cons r (select-join* q rmore flt)))
     (when-let [pq (peek q)]
@@ -184,32 +183,30 @@
    results))
 
 (defn select-reified
-  [ds]
-  (let [res (select-join-from
-             ds [['?s (:type api/RDF) (:statement api/RDF)]
-                 ['?s (:subject api/RDF) '?subj]
-                 ['?s (:predicate api/RDF) '?pred]
-                 ['?s (:object api/RDF) '?obj]
-                 ['?s '?p '?o]]
-             nil)]
-    (->> res
-         (group-by #(get % '?s))
-         (map
-          (fn [[id triples]]
-            (let [{s '?subj p '?pred o '?obj} (first triples)]
-              [id {:statement [s p o]
-                   :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
-         (into {}))))
-
-(defn has-reification?
-  [ds [s p o]]
-  (select-join-from
-   ds
-   [['?s (:type api/RDF) (:statement api/RDF)]
-    ['?s (:subject api/RDF) s]
-    ['?s (:predicate api/RDF) p]
-    ['?s (:object api/RDF) o]]
-   nil))
+  "Selects all reified statements from store, optional for given triple
+  pattern. Returns map of results grouped by reified statment id and
+  includes all PO pairs of each."
+  ([ds] (select-reified ds nil))
+  ([ds triple]
+     (let [bindings (->> triple
+                         (mapcat #(when-not (nil? %2) [[% %2]])
+                                 '[?subj ?pred ?obj])
+                         (into {}))
+           res (select-join-from
+                ds [['?s (:type api/RDF) (:statement api/RDF)]
+                    ['?s (:subject api/RDF) '?subj]
+                    ['?s (:predicate api/RDF) '?pred]
+                    ['?s (:object api/RDF) '?obj]
+                    ['?s '?p '?o]]
+                bindings nil)]
+       (->> res
+            (group-by #(get % '?s))
+            (map
+             (fn [[id triples]]
+               (let [{s '?subj p '?pred o '?obj} (first triples)]
+                 [id {:statement [s p o]
+                      :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
+            (into {})))))
 
 (defn not-exists
   [ds patterns]
