@@ -162,6 +162,41 @@
   ([ds triples bindings flt]
      (select-join (map #(cons ds %) (sort-patterns triples)) bindings flt)))
 
+(defn queue-queries
+  [q [[ds & p] & patterns] bindings]
+  (let [queries (build-queries-with-prebounds p bindings)]
+    (reduce
+     (fn [q [p bmap :as patt]]
+       (let [r-binds (restrict-multi-bindings p bmap bindings)]
+         (conj q [ds (cons patt patterns) r-binds])))
+     q queries)))
+
+(defn select-join-q*
+  [q results flt]
+  ;;(prn :qc (count q) :pq (drop 1 (peek q)))
+  (if-let [pq (peek q)]
+    (let [[ds [[p bmap] & patterns] bindings] pq
+          res (select-with-bindings ds p bmap false)]
+      (if (seq res)
+        (let [bindings (->> res
+                            (map #(unique-var-bindings? (merge bindings %)))
+                            (filter (complement nil?)))]
+          (if (seq patterns)
+            (recur
+             (reduce #(queue-queries % patterns %2) (pop q) bindings)
+             results flt)
+            (recur (pop q) (concat results (if flt (flt bindings) bindings)) flt)))
+        (recur (pop q) results flt)))
+    results))
+
+(defn select-join-queue
+  ([patterns] (select-join-queue patterns {} nil))
+  ([patterns flt] (select-join-queue patterns {} flt))
+  ([patterns bindings flt]
+     (select-join-q*
+      (queue-queries clojure.lang.PersistentQueue/EMPTY patterns bindings)
+      [] flt)))
+
 (defn filter-result-vars
   [res vars]
   (let [vars (if (coll? vars) vars [vars])]
