@@ -42,6 +42,15 @@
 
 (defn next-char? [^PushbackReader in x] (= x (char (.read in))))
 
+(defn push-context
+  [state]
+  (update-in state [:stack] #(conj (or % []) (dissoc state :stack))))
+
+(defn pop-context
+  [state]
+  (when-let [s2 (clojure.core/peek (:stack state))]
+    (assoc s2 :stack (pop (:stack state)))))
+
 (defn read-while
   ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuffer.)))
   ([^PushbackReader in f unread-last? ^StringBuffer buf]
@@ -213,7 +222,7 @@
                           :default (assoc state
                                      :state :end-triple?
                                      :triple-ctx :object
-                                     :object (api/make-literal "")))
+                                     :object (api/make-literal ""))) ;; TODO add xsd:string type
                  :default (assoc state
                             :state :literal-content :literal n :lit-terminator q)))]
     (cond
@@ -229,14 +238,18 @@
     (condp = c
       \@ (assoc state :state :lang-tag :literal lit)
       \^ (assoc state :state :literal-type :literal lit)
-      (assoc state :state :end-triple? :object (api/make-literal lit)))))
+      (assoc state
+        :state :end-triple?
+        :object (api/make-literal lit))))) ;; TODO add xsd:string type
 
 (defmethod read-token :lang-tag
   [^PushbackReader in state]
   (.read in)
   (let [ok (:lang-tag char-ranges)
         lang (read-while in #(ok %) true)]
-    (assoc state :state :end-triple? :object (api/make-literal (:literal state) lang))))
+    (assoc state
+      :state :end-triple?
+      :object (api/make-literal (:literal state) lang)))) ;; TODO add xsd:string type
 
 (defmethod read-token :end-triple?
   [^PushbackReader in state]
