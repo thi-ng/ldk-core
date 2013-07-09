@@ -112,7 +112,7 @@
             :prefix (-> state
                         (update-in [:ns-map] conj [prefix iri])
                         (assoc :state :terminal))
-            (assoc state ctx iri :state (spo-transitions ctx))))
+            (assoc state ctx (api/make-resource iri) :state (spo-transitions ctx))))
         (error state (str "unterminated IRI: " iri))))))
 
 (defmethod read-token :terminal
