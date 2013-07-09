@@ -46,6 +46,5 @@
                          (if (sequential? v) [(conj i v) c] [i (conj c v)]))
                        [[] #{}] ivals)]
     (fn [x]
-      (if (const x)
-        true
+      (if (const x) x
         (some (fn [[a b]] (and (<= a x) (<= x b))) ivals)))))

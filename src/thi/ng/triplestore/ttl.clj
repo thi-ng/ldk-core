@@ -65,7 +65,7 @@
 
 (defmulti read-token
   (fn [_ state]
-    ;;(prn (:state state))
+    (prn (:state state))
     (:state state)))
 
 (defmethod read-token :default
@@ -140,6 +140,16 @@
             :state (spo-transitions ctx)))))
     (error state "illegal bnode label")))
 
+(defmethod read-token :anon
+  [^PushbackReader in {ctx :triple-ctx :as state}]
+  (.read in)
+  (skip-ws in)
+  (if (next-char? in \])
+    (assoc state
+      ctx (api/make-blank-node)
+      :state (spo-transitions ctx))
+    (error state "illegal anon node")))
+
 (defmethod read-token :predicate
   [^PushbackReader in state]
   (skip-ws in)
@@ -184,8 +194,9 @@
       \< (assoc state :state :iri-ref :iri-ctx :object)
       \" (assoc state :state :literal)
       \' (assoc state :state :literal)
-      \[ (assoc state :state :bnode-proplist)
+      \[ (assoc state :state :bnode-proplist) ;; TODO push stack?
       \_ (assoc state :state :bnode :triple-ctx :object)
+      \( (assoc state :state :coll)
       (assoc state :state :pname :triple-ctx :object))))
 
 (defmethod read-token :literal
@@ -232,10 +243,13 @@
   (skip-ws in)
   (condp = (char (.read in))
     \. (-> state
-           (dissoc :subject :predicate :object)
+           (dissoc :subject :predicate :object :literal)
            (assoc :triple (get-triple state) :state :doc))
+    \, (-> state
+           (dissoc :object :literal)
+           (assoc :triple (get-triple state) :state :object))
     \; (-> state
-           (dissoc :predicate :object)
+           (dissoc :predicate :object :literal)
            (assoc :triple (get-triple state) :state :predicate))
     (error state "non-terminated triple")))
 
@@ -246,8 +260,10 @@
       {:state :doc :ns-map {} :blanks {}}))
   ([^PushbackReader in state]
      (if (:triple state)
-       (lazy-seq
-        (cons (:triple state) (parse-ttl in (dissoc state :triple))))
+       (with-meta
+         (lazy-seq
+          (cons (:triple state) (parse-ttl in (dissoc state :triple))))
+         {:prefixes (:ns-map state)})
        (cond
         (:error state) [state]
         (= :eof (:state state)) nil
