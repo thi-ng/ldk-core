@@ -32,3 +32,20 @@
                 (coll? node) (reduce walk acc node)
                 :default acc))]
     (reduce walk [] root)))
+
+(defn interval-set
+  [& ivals]
+  (->> ivals
+       (mapcat (fn [v] (if (sequential? v) (range (v 0) (inc (v 1))) [v])))
+       (into (sorted-set))))
+
+(defn check-intervals
+  [& ivals]
+  (let [[ivals const] (reduce
+                       (fn [[i c] v]
+                         (if (sequential? v) [(conj i v) c] [i (conj c v)]))
+                       [[] #{}] ivals)]
+    (fn [x]
+      (if (const x)
+        true
+        (some (fn [[a b]] (and (<= a x) (<= x b))) ivals)))))
