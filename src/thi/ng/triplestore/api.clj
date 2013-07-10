@@ -161,7 +161,7 @@
 (defn add-list
   ([store coll] (add-list store (make-blank-node) coll))
   ([store node coll]
-     (apply add-many store (rdf-list node coll))))
+     (apply add-many store (rdf-list-triples node coll))))
 
 ;; TODO fail if node already exists
 (defn add-reified-statement
