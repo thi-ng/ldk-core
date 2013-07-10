@@ -8,6 +8,11 @@
   (:import
    [java.io PushbackReader]))
 
+(defn trace
+  [id state]
+  (prn id (map (fn [[k v]] [k (if (keyword? v) v (api/index-value v))])
+               (select-keys state [:subject :predicate :object :triple-ctx]))))
+
 (defn error
   [state msg] (assoc state :error msg))
 
@@ -31,6 +36,7 @@
 
 (defn get-triple
   [{:keys [subject predicate object]}]
+  (prn :triple [subject predicate object])
   [subject predicate object])
 
 (defn skip-ws [^PushbackReader in]
@@ -44,11 +50,15 @@
 
 (defn push-context
   [state]
-  (update-in state [:stack] #(conj (or % []) (dissoc state :stack))))
+  (trace :push state)
+  (-> state
+      (update-in [:stack] #(conj (or % []) (dissoc state :stack)))
+      (assoc :bnode? true)))
 
 (defn pop-context
   [state]
   (when-let [s2 (clojure.core/peek (:stack state))]
+    (trace :pop state)
     (assoc s2 :stack (pop (:stack state)))))
 
 (defn read-while
@@ -89,7 +99,7 @@
       \@ (assoc state :state :prefix)
       \# (assoc state :state :comment)
       \_ (assoc state :state :bnode :triple-ctx :subject)
-      \[ (assoc state :state :anon :triple-ctx :subject)
+      \[ (assoc state :state :bnode-proplist :triple-ctx :subject)
       \uffff (assoc state :state :eof)
       (assoc state :state :pname :triple-ctx :subject))))
 
@@ -144,20 +154,30 @@
         (let [state (if (get-in state [:blanks id]) state
                         (assoc-in state [:blanks id] (api/make-blank-node)))
               ctx (:triple-ctx state)]
+          (prn :blanks (:blanks state))
+          (prn :blank id (get-in state [:blanks id]))
           (assoc state
             ctx (get-in state [:blanks id])
             :state (spo-transitions ctx)))))
     (error state "illegal bnode label")))
 
-(defmethod read-token :anon
+(defmethod read-token :bnode-proplist
   [^PushbackReader in {ctx :triple-ctx :as state}]
   (.read in)
   (skip-ws in)
-  (if (next-char? in \])
-    (assoc state
-      ctx (api/make-blank-node)
-      :state (spo-transitions ctx))
-    (error state "illegal anon node")))
+  (let [state (assoc state
+                ctx (api/make-blank-node)
+                :state (spo-transitions ctx))]
+    (trace :bprops state)
+    (if (= \] (peek in))
+      (do (.read in) state)
+      (let [s2 (push-context state)]
+        (if (= :object ctx)
+          (assoc s2
+            :triple (get-triple s2)
+            :state :predicate
+            :subject (:object state))
+          s2)))))
 
 (defmethod read-token :predicate
   [^PushbackReader in state]
@@ -173,15 +193,17 @@
     (if (and (= c \a) (= (peek in) \space))
       (do
         (.read in)
+        (prn :pname-pred :rdf:type)
         (assoc state :predicate (:type api/RDF) :state :object))
       (let [illegal (:iri-illegal char-ranges)
             pname (str c (read-while in #(not (illegal %)) true))
             nc (char (.read in))]
+        (prn :pname-pred pname)
         (if (= nc \space)
           (if-let [n (resolve-pname state pname)]
             (assoc state :predicate n :state :object)
             (error state (str "unknown prefix in pname: " pname)))
-          (error state (str "unexpected char in pname: " nc)))))))
+          (error state (str "unexpected char in pname: " pname " char: " nc)))))))
 
 (defmethod read-token :pname
   [^PushbackReader in state]
@@ -189,6 +211,7 @@
         pname (read-while in #(not (illegal %)) true)
         nc (char (.read in))
         ctx (:triple-ctx state)]
+    (prn :pname pname)
     (if (= nc \space)
       (if-let [n (resolve-pname state pname)]
         (assoc state ctx n :state (spo-transitions ctx))
@@ -203,7 +226,7 @@
       \< (assoc state :state :iri-ref :iri-ctx :object)
       \" (assoc state :state :literal)
       \' (assoc state :state :literal)
-      \[ (assoc state :state :bnode-proplist) ;; TODO push stack?
+      \[ (assoc state :state :bnode-proplist :triple-ctx :object) ;; TODO push stack?
       \_ (assoc state :state :bnode :triple-ctx :object)
       \( (assoc state :state :coll)
       (assoc state :state :pname :triple-ctx :object))))
@@ -255,6 +278,14 @@
   [^PushbackReader in state]
   (skip-ws in)
   (condp = (char (.read in))
+    \] (if (:bnode? state)
+         (let [s2 (pop-context state)
+               s2 (assoc s2
+                    :triple (get-triple state)
+                    :state (spo-transitions (:triple-ctx s2)))]
+           (trace :restored s2)
+           s2)
+         (error state "nesting error"))
     \. (-> state
            (dissoc :subject :predicate :object :literal)
            (assoc :triple (get-triple state) :state :doc))
