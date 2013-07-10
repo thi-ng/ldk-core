@@ -27,12 +27,12 @@
 
 (defn resolve-pname
   [state pname]
-  (let [[ns local :as pn] (str/split pname #":")
-        prefix (if (str/blank? ns)
-                 (:base-ns state)
-                 (get-in state [:ns-map ns]))]
-    (when (and prefix (= 2 (count pn)))
-      (api/make-resource (str prefix local)))))
+  (let [idx (.indexOf pname ":")
+        iri (if (neg? idx)
+              (str (:base-ns state) pname)
+              (when-let [prefix (get-in state [:ns-map (subs pname 0 idx)])]
+                (str prefix (subs pname (inc idx)))))]
+    (when iri (api/make-resource iri))))
 
 (defn get-triple
   [{:keys [subject predicate object]}]
@@ -306,7 +306,7 @@
      (if (:triple state)
        (with-meta
          (lazy-seq
-          (cons (:triple state) (parse-ttl in (dissoc state :triple))))
+          (cons (:triple state) (parse-triples in (dissoc state :triple))))
          {:prefixes (:ns-map state)})
        (cond
         (:error state) [state]
