@@ -314,12 +314,15 @@
 (defmethod read-token :literal-content
   [^PushbackReader in state]
   (let [terminators #{(int (:lit-terminator state)) 0x000a 0x000d}
-        lit (str (:literal state) (read-while in #(not (terminators %)) false))
-        c (peek in)]
-    (condp = c
-      \@ (assoc state :state :lang-tag :literal lit)
-      \^ (assoc state :state :literal-type :literal lit)
-      (-> state (transition) (assoc :object (api/make-literal lit)))))) ;; TODO add xsd:string type
+        lit (str (:literal state) (read-while in #(not (terminators %)) true))
+        c (char (.read in))
+        n (peek in)]
+    (if (= c (:lit-terminator state))
+      (condp = n
+        \@ (assoc state :state :lang-tag :literal lit)
+        \^ (assoc state :state :literal-type :literal lit)
+        (-> state (transition) (assoc :object (api/make-literal lit))))
+      (fail state "unexpected line break in literal")))) ;; TODO add xsd:string type
 
 (defmethod read-token :lang-tag
   [^PushbackReader in state]
