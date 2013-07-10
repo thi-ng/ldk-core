@@ -34,10 +34,13 @@
                 (str prefix (subs pname (inc idx)))))]
     (when iri (api/make-resource iri))))
 
-(defn get-triple
-  [{:keys [subject predicate object]}]
-  (prn :triple [subject predicate object])
-  [subject predicate object])
+(defn emit-triple
+  ([{:keys [subject predicate object] :as state}]
+     (prn :triple [subject predicate object])
+     (update-in state [:triples] conj [subject predicate object]))
+  ([state {:keys [subject predicate object]}]
+     (prn :triple [subject predicate object])
+     (update-in state [:triples] conj [subject predicate object])))
 
 (defn skip-ws [^PushbackReader in]
   (let [c (.read in)]
@@ -173,10 +176,9 @@
       (do (.read in) state)
       (let [s2 (push-context state)]
         (if (= :object ctx)
-          (assoc s2
-            :triple (get-triple s2)
-            :state :predicate
-            :subject (:object state))
+          (-> s2
+              (emit-triple)
+              (assoc :state :predicate :subject (:object state)))
           s2)))))
 
 (defmethod read-token :predicate
@@ -231,6 +233,12 @@
       \( (assoc state :state :coll)
       (assoc state :state :pname :triple-ctx :object))))
 
+(defmethod read-token :coll
+  [^PushbackReader in state]
+  (.read in)
+  (skip-ws in)
+  )
+
 (defmethod read-token :literal
   [^PushbackReader in state]
   (let [c (char (.read in))
@@ -280,21 +288,24 @@
   (condp = (char (.read in))
     \] (if (:bnode? state)
          (let [s2 (pop-context state)
-               s2 (assoc s2
-                    :triple (get-triple state)
-                    :state (spo-transitions (:triple-ctx s2)))]
+               s2 (-> s2
+                      (emit-triple state)
+                      (assoc :state (spo-transitions (:triple-ctx s2))))]
            (trace :restored s2)
            s2)
          (error state "nesting error"))
     \. (-> state
+           (emit-triple)
            (dissoc :subject :predicate :object :literal)
-           (assoc :triple (get-triple state) :state :doc))
+           (assoc :state :doc))
     \, (-> state
+           (emit-triple)
            (dissoc :object :literal)
-           (assoc :triple (get-triple state) :state :object))
+           (assoc :state :object))
     \; (-> state
+           (emit-triple)
            (dissoc :predicate :object :literal)
-           (assoc :triple (get-triple state) :state :predicate))
+           (assoc :state :predicate))
     (error state "non-terminated triple")))
 
 (defn parse-triples
@@ -303,10 +314,10 @@
       (PushbackReader. (io/reader in))
       {:state :doc :ns-map {} :blanks {}}))
   ([^PushbackReader in state]
-     (if (:triple state)
+     (if-let [t (first (:triples state))]
        (with-meta
          (lazy-seq
-          (cons (:triple state) (parse-triples in (dissoc state :triple))))
+          (cons t (parse-triples in (update-in state [:triples] rest))))
          {:prefixes (:ns-map state)})
        (cond
         (:error state) [state]
