@@ -4,14 +4,17 @@
    [thi.ng.triplestore.util :as util]
    [thi.ng.triplestore.api :as api]
    [clojure.string :as str]
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [clojure.pprint :refer [pprint]])
   (:import
    [java.io PushbackReader]))
 
 (defn trace
   [id state]
-  (prn id (map (fn [[k v]] [k (if (keyword? v) v (api/index-value v))])
-               (select-keys state [:subject :predicate :object :triple-ctx]))))
+  (prn id)
+  (pprint (map (fn [[k v]] [k (if (or (keyword? v) (sequential? v)) v (api/index-value v))])
+               (select-keys state [:subject :predicate :object :triple-ctx :state :coll-items])))
+  state)
 
 (defn error
   [state msg] (assoc state :error msg))
@@ -42,6 +45,11 @@
      (prn :triple [subject predicate object])
      (update-in state [:triples] conj [subject predicate object])))
 
+(defn queue-triples
+  [state triples]
+  (prn :queue triples)
+  (update-in state [:triples] into triples))
+
 (defn skip-ws [^PushbackReader in]
   (let [c (.read in)]
     (if (Character/isWhitespace c)
@@ -52,17 +60,26 @@
 (defn next-char? [^PushbackReader in x] (= x (char (.read in))))
 
 (defn push-context
-  [state]
+  [state nest-type]
   (trace :push state)
   (-> state
       (update-in [:stack] #(conj (or % []) (dissoc state :stack)))
-      (assoc :bnode? true)))
+      (assoc :nest-type nest-type)))
 
 (defn pop-context
   [state]
   (when-let [s2 (clojure.core/peek (:stack state))]
     (trace :pop state)
-    (assoc s2 :stack (pop (:stack state)))))
+    (-> s2
+        (assoc :stack (pop (:stack state)))
+        (assoc :blanks (merge (:blanks s2) (:blanks state))))))
+
+(defn collection-state? [state] (= :coll (:nest-type state)))
+(defn bnode-state? [state] (= :bnode (:nest-type state)))
+
+(defn transition
+  [state]
+  (assoc state :state (if (collection-state? state) :object (spo-transitions (:triple-ctx state)))))
 
 (defn read-while
   ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuffer.)))
@@ -103,6 +120,7 @@
       \# (assoc state :state :comment)
       \_ (assoc state :state :bnode :triple-ctx :subject)
       \[ (assoc state :state :bnode-proplist :triple-ctx :subject)
+      \( (assoc state :state :coll :triple-ctx :subject)
       \uffff (assoc state :state :eof)
       (assoc state :state :pname :triple-ctx :subject))))
 
@@ -134,7 +152,7 @@
             :prefix (-> state
                         (update-in [:ns-map] conj [prefix iri])
                         (assoc :state :terminal))
-            (assoc state ctx (api/make-resource iri) :state (spo-transitions ctx))))
+            (-> state (transition) (assoc ctx (api/make-resource iri)))))
         (error state (str "unterminated IRI: " iri))))))
 
 (defmethod read-token :terminal
@@ -159,27 +177,30 @@
               ctx (:triple-ctx state)]
           (prn :blanks (:blanks state))
           (prn :blank id (get-in state [:blanks id]))
-          (assoc state
-            ctx (get-in state [:blanks id])
-            :state (spo-transitions ctx)))))
+          (-> state (transition) (assoc ctx (get-in state [:blanks id]))))
+        (error state "illegal character after bnode")))
     (error state "illegal bnode label")))
 
 (defmethod read-token :bnode-proplist
   [^PushbackReader in {ctx :triple-ctx :as state}]
   (.read in)
   (skip-ws in)
-  (let [state (assoc state
-                ctx (api/make-blank-node)
-                :state (spo-transitions ctx))]
+  (let [node (api/make-blank-node)
+        state (-> state (transition) (assoc ctx node))
+        state (if (collection-state? state)
+                (update-in state [:coll-items] conj node)
+                state)]
     (trace :bprops state)
     (if (= \] (peek in))
       (do (.read in) state)
-      (let [s2 (push-context state)]
-        (if (= :object ctx)
-          (-> s2
-              (emit-triple)
-              (assoc :state :predicate :subject (:object state)))
-          s2)))))
+      (let [s2 (dissoc (push-context state :bnode) :coll-items)]
+        (if (collection-state? state)
+          (assoc s2 :state :predicate :subject (:object state)) ;; TODO ???
+          (if (= :object ctx)
+            (-> s2
+                (emit-triple)
+                (assoc :state :predicate :subject (:object state)))
+            s2))))))
 
 (defmethod read-token :predicate
   [^PushbackReader in state]
@@ -213,31 +234,47 @@
         pname (read-while in #(not (illegal %)) true)
         nc (char (.read in))
         ctx (:triple-ctx state)]
-    (prn :pname pname)
+    (prn :pname pname :ctx ctx)
     (if (= nc \space)
       (if-let [n (resolve-pname state pname)]
-        (assoc state ctx n :state (spo-transitions ctx))
+        (-> state (transition) (assoc ctx n))
         (error state (str "unknown prefix in pname: " pname)))
       (error state (str "unexpected char in pname: " nc)))))
 
 (defmethod read-token :object
   [^PushbackReader in state]
   (skip-ws in)
-  (let [c (peek in)]
+  (let [state (if (collection-state? state)
+                (if-let [obj (:object state)]
+                  (update-in state [:coll-items] conj obj)
+                  state)
+                state)
+        c (peek in)]
+    (trace :object state)
     (condp = c
       \< (assoc state :state :iri-ref :iri-ctx :object)
-      \" (assoc state :state :literal)
-      \' (assoc state :state :literal)
+      \" (assoc state :state :literal :triple-ctx :object)
+      \' (assoc state :state :literal :triple-ctx :object)
       \[ (assoc state :state :bnode-proplist :triple-ctx :object) ;; TODO push stack?
       \_ (assoc state :state :bnode :triple-ctx :object)
-      \( (assoc state :state :coll)
+      \( (assoc state :state :coll :triple-ctx :object)
+      \) (if (collection-state? state)
+           (assoc state :state :end-triple?)
+           (error state "list nesting error"))
       (assoc state :state :pname :triple-ctx :object))))
 
 (defmethod read-token :coll
-  [^PushbackReader in state]
+  [^PushbackReader in {ctx :triple-ctx :as state}]
   (.read in)
   (skip-ws in)
-  )
+  (let [node (api/make-blank-node)
+        state (-> state (transition) (assoc ctx node))]
+    (trace :coll state)
+    (if (= \) (peek in))
+      (do (.read in) (queue-triples state (api/rdf-list-triples node [])))
+      (let [s2 (push-context state :coll)]
+        (trace :coll-obj-s2 (assoc s2 :state :object :object nil :subject node :coll-items []))
+          ))))
 
 (defmethod read-token :literal
   [^PushbackReader in state]
@@ -269,31 +306,33 @@
     (condp = c
       \@ (assoc state :state :lang-tag :literal lit)
       \^ (assoc state :state :literal-type :literal lit)
-      (assoc state
-        :state :end-triple?
-        :object (api/make-literal lit))))) ;; TODO add xsd:string type
+      (-> state (transition) (assoc :object (api/make-literal lit)))))) ;; TODO add xsd:string type
 
 (defmethod read-token :lang-tag
   [^PushbackReader in state]
   (.read in)
   (let [ok (:lang-tag char-ranges)
         lang (read-while in #(ok %) true)]
-    (assoc state
-      :state :end-triple?
-      :object (api/make-literal (:literal state) lang)))) ;; TODO add xsd:string type
+    (-> state (transition) (assoc :object (api/make-literal (:literal state) lang))))) ;; TODO add xsd:string type
 
 (defmethod read-token :end-triple?
   [^PushbackReader in state]
   (skip-ws in)
   (condp = (char (.read in))
-    \] (if (:bnode? state)
-         (let [s2 (pop-context state)
-               s2 (-> s2
-                      (emit-triple state)
-                      (assoc :state (spo-transitions (:triple-ctx s2))))]
+    \] (if (= :bnode (:nest-type state))
+         (let [s2 (-> state (pop-context) (emit-triple state) (transition))
+               s2 (if (collection-state? s2) (dissoc s2 :object) s2)]
            (trace :restored s2)
            s2)
-         (error state "nesting error"))
+         (error state "bnode nesting error"))
+    \) (if (collection-state? state)
+         (let [s2 (-> state
+                      (pop-context)
+                      (queue-triples (api/rdf-list-triples (:subject state) (:coll-items state)))
+                      (transition))]
+           (trace :restored s2)
+           s2)
+         (error state "list nesting error"))
     \. (-> state
            (emit-triple)
            (dissoc :subject :predicate :object :literal)
