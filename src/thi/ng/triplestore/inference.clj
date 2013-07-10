@@ -83,11 +83,11 @@
   describe group. Returns 2-elem vector of [updated-model inferred]"
   ([ds rule targets annos]
      (let [[ds inferred] (infer-rule ds rule targets)]
-       [(api/reify-as-group ds inferred annos) inferred]))
+       [(api/add-reified-group ds inferred annos) inferred]))
   ([ds g rule targets annos]
      (let [[ds inferred] (infer-rule ds rule (map #(cons g %) targets))]
        [(api/update-model
-         ds g (api/reify-as-group (api/get-model ds g) inferred annos))
+         ds g (api/add-reified-group (api/get-model ds g) inferred annos))
         inferred])))
 
 (defn infer-rules-with-annotations
@@ -99,7 +99,7 @@
                (fn [ds [id triples]]
                  (if g
                    (api/update-model
-                    ds g (api/reify-as-group (api/get-model ds g) triples (anno-fn id triples)))
-                   (api/reify-as-group ds triples (anno-fn id triples))))
+                    ds g (api/add-reified-group (api/get-model ds g) triples (anno-fn id triples)))
+                   (api/add-reified-group ds triples (anno-fn id triples))))
                ds inf-map)]
        [ds inf-map])))

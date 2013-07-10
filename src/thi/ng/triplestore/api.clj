@@ -119,44 +119,53 @@
   [store & statements]
   (reduce #(apply remove-statement % %2) store statements))
 
-(defn make-container
-  ([store c-type items]
-     (make-container store c-type (make-blank-node) items))
-  ([store c-type node items]
-     (->> items
+(defn rdf-container-triples
+  ([c-type coll] (rdf-container-triples c-type (make-blank-node) coll))
+  ([c-type node coll]
+     (->> coll
           (map-indexed
            (fn [i v]
              [node (make-resource (str (:membership RDF) (inc i))) v]))
-          (cons [node (:type RDF) (c-type RDF)])
-          (apply add-many store))))
+          (cons [node (:type RDF) (c-type RDF)]))))
 
-(defn make-bag
-  ([store items] (make-container store :bag items))
-  ([store node items] (make-container store :bag node items)))
-
-(defn make-alt
-  ([store items] (make-container store :alt (set items)))
-  ([store node items] (make-container store :alt node (set items))))
-
-(defn make-seq
-  ([store items] (make-container store :seq items))
-  ([store node items] (make-container store :seq node items)))
-
-(defn make-list
-  ([store items] (make-list store (make-blank-node) items))
-  ([store node items]
-     (loop [ds store n node [i & more] items]
-       (let [stm [[n (:type RDF) (:list RDF)] [n (:first RDF) i]]]
+(defn rdf-list-triples
+  ([coll] (rdf-list-triples (make-blank-node) coll))
+  ([node coll]
+     (loop [triples [] n node [i & more] coll]
+       (let [stm [[n (:type RDF) (:list RDF)] [n (:first RDF) (or i (:nil RDF))]]]
          (if (seq more)
            (let [nxt (make-blank-node)]
              (recur
-              (apply add-many ds (concat stm [[n (:rest RDF) nxt]]))
+              (concat triples stm [[n (:rest RDF) nxt]])
               nxt more))
-           (apply add-many ds (concat stm [[n (:rest RDF) (:nil RDF)]])))))))
+           (concat triples stm [[n (:rest RDF) (:nil RDF)]]))))))
+
+(defn add-container
+  ([store c-type coll]
+     (add-container store c-type (make-blank-node) coll))
+  ([store c-type node coll]
+     (apply add-many store (rdf-container-triples c-type node coll))))
+
+(defn add-bag
+  ([store coll] (add-container store :bag coll))
+  ([store node coll] (add-container store :bag node coll)))
+
+(defn add-alt
+  ([store coll] (add-container store :alt (set coll)))
+  ([store node coll] (add-container store :alt node (set coll))))
+
+(defn add-seq
+  ([store coll] (add-container store :seq coll))
+  ([store node coll] (add-container store :seq node coll)))
+
+(defn add-list
+  ([store coll] (add-list store (make-blank-node) coll))
+  ([store node coll]
+     (apply add-many store (rdf-list node coll))))
 
 ;; TODO fail if node already exists
-(defn reify-statement
-  ([store triple] (reify-statement store (make-blank-node) triple))
+(defn add-reified-statement
+  ([store triple] (add-reified-statement store (make-blank-node) triple))
   ([store node [s p o] & extra]
      (let [store (-> store
                      (add-statement node (:type RDF) (:statement RDF))
@@ -165,13 +174,13 @@
                      (add-statement node (:object RDF) o))]
        (apply add-many store (map #(cons node %) extra)))))
 
-(defn reify-as-group
-  ([store triples extra] (reify-as-group store (make-blank-node) triples extra))
+(defn add-reified-group
+  ([store triples extra] (add-reified-group store (make-blank-node) triples extra))
   ([store node triples extra]
-     (let [[store items] (reduce
+     (let [[store coll] (reduce
                           (fn [[ds nodes] t]
                             (let [n (make-blank-node)]
-                              [(reify-statement ds n t) (conj nodes n)]))
+                              [(add-reified-statement ds n t) (conj nodes n)]))
                           [store []] triples)
-           store (make-bag store node items)]
+           store (add-bag store node coll)]
        (apply add-many store (map #(cons node %) extra)))))
