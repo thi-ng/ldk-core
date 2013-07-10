@@ -11,6 +11,12 @@
   (:import
    [java.io PushbackReader]))
 
+(def char-ranges
+  (->> {:iri-illegal [[0x00 0x20] 0x3c 0x3e 0x22 [0x7b 0x7d] 0x5e 0x5c 0x60]
+        :lang-tag [[0x41 0x5a] [0x61 0x7a] 0x2d]}
+       (map (fn [[k v]] [k (apply util/interval-set v)]))
+       (into {})))
+
 (defn trace
   [id state]
   (prn id)
@@ -19,18 +25,6 @@
     (fn [[k v]] [k (if (or (keyword? v) (sequential? v)) v (api/index-value v))])
     (select-keys state [:subject :predicate :object :triple-ctx :state :coll-items])))
   state)
-
-(defn error
-  [state msg] (assoc state :error msg))
-
-(def char-ranges
-  (->> {:iri-illegal [[0x00 0x20] 0x3c 0x3e 0x22 [0x7b 0x7d] 0x5e 0x5c 0x60]
-        :lang-tag [[0x41 0x5a] [0x61 0x7a] 0x2d]}
-       (map (fn [[k v]] [k (apply util/interval-set v)]))
-       (into {})))
-
-(def spo-transitions
-  {:subject :predicate :predicate :object :object :end-triple?})
 
 (defn resolve-pname
   [state pname]
@@ -52,15 +46,6 @@
   (prn :queue triples)
   (update-in state [:triples] into triples))
 
-(defn skip-ws [^PushbackReader in]
-  (let [c (.read in)]
-    (if (Character/isWhitespace c)
-      (recur in) (.unread in c))))
-
-(defn peek [^PushbackReader in] (let [c (.read in)] (.unread in c) (char c)))
-
-(defn next-char? [^PushbackReader in x] (= x (char (.read in))))
-
 (defn push-context
   [state nest-type]
   (trace :push state)
@@ -72,37 +57,58 @@
   [state]
   (when-let [s2 (clojure.core/peek (:stack state))]
     (trace :pop state)
-    (-> s2
-        (assoc :stack (pop (:stack state)))
-        (assoc :blanks (merge (:blanks s2) (:blanks state))))))
+    (assoc s2
+      :stack (pop (:stack state))
+      :blanks (merge (:blanks s2) (:blanks state)))))
 
 (defn list-state? [state] (= :list (:nest-type state)))
 (defn bnode-state? [state] (= :bnode (:nest-type state)))
 
+(def spo-transitions
+  {:subject :predicate :predicate :object :object :end-triple?})
+
+(def doc-transitions
+  {\@ :prefix \# :comment \_ :bnode \[ :bnode-proplist \( :list \uffff :eof})
+
 (defn transition
   [state]
-  (assoc state :state (if (list-state? state) :object (spo-transitions (:triple-ctx state)))))
+  (assoc state
+    :state (if (list-state? state)
+             :object
+             (spo-transitions (:triple-ctx state)))))
+
+(defn fail [state msg] (assoc state :error msg))
+
+(defn skip-ws [^PushbackReader in]
+  (let [c (.read in)]
+    (if (Character/isWhitespace c)
+      (recur in)
+      (.unread in c))))
+
+(defn peek [^PushbackReader in] (let [c (.read in)] (.unread in c) (char c)))
+
+(defn next-char? [^PushbackReader in x] (= x (char (.read in))))
 
 (defn read-while
   ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuffer.)))
   ([^PushbackReader in f unread-last? ^StringBuffer buf]
      (let [c (.read in)]
-       (if (and (not (neg? c)) (f c))
+       (if (and (>= c 0) (f c))
          (recur in f unread-last? (.append buf (char c)))
          (do
            (when unread-last? (.unread in c))
            (.toString buf))))))
 
-(defn read-literal
+(defn read-literal-or-fail
   [^PushbackReader in state lit target]
   (let [len (count lit)
         buf (make-array Character/TYPE len)
         c (.read in buf 0 len)]
     (if (< c len)
-      (assoc state :error "unexpected EOF")
+      (fail state "unexpected EOF")
       (if (= lit (apply str buf))
         (assoc state :state target)
-        (error state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
+        (fail state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
 
 (defmulti read-token
   (fn [_ state]
@@ -111,27 +117,24 @@
 
 (defmethod read-token :default
   [^PushbackReader in state]
-  (error state (str "unimplemented state " (:state state))))
+  (fail state (str "unimplemented state " (:state state))))
 
 (defmethod read-token :doc
   [^PushbackReader in state]
   (skip-ws in)
   (let [c (peek in)]
-    (condp = c
-      \@ (assoc state :state :prefix)
-      \# (assoc state :state :comment :comment-ctx :doc)
-      \_ (assoc state :state :bnode :triple-ctx :subject)
-      \[ (assoc state :state :bnode-proplist :triple-ctx :subject)
-      \( (assoc state :state :list :triple-ctx :subject)
-      \uffff (assoc state :state :eof)
-      (assoc state :state :pname :triple-ctx :subject))))
+    (-> state
+        (dissoc :subject :predicate :object :literal :coll-items :nest-type)
+        (merge {:triple-ctx :subject :comment-ok? false :comment-ctx :doc})
+        (assoc :state (get doc-transitions c :pname)))))
 
 (defmethod read-token :prefix
   [^PushbackReader in state]
   (.read in)
   (condp = (char (.read in))
-    \p (read-literal in state "refix" :prefix-ns)
-    \b (read-literal in (assoc state :iri-ctx :base) "ase" :iri-ref)))
+    \p (read-literal-or-fail in state "refix" :prefix-ns)
+    \b (read-literal-or-fail in (assoc state :iri-ctx :base) "ase" :iri-ref)
+    (fail state "illegal character following '@'")))
 
 (defmethod read-token :prefix-ns
   [^PushbackReader in state]
@@ -151,22 +154,23 @@
         (let [{ctx :iri-ctx prefix :prefix-ns} state
               state (dissoc state :prefix-ns :iri-ctx)]
           (condp = ctx
-            :base (assoc state :base-ns iri :state :terminal)
+            :base (assoc state :base-iri iri :state :prefix-terminal)
             :prefix (-> state
                         (update-in [:prefixes] conj [prefix iri])
-                        (assoc :state :terminal))
+                        (assoc :state :prefix-terminal))
             (-> state
                 (transition)
                 (assoc ctx (api/make-resource
                             (if (.startsWith iri "#")
-                              (str (:base-ns state) iri)
+                              (str (:base-iri state) iri)
                               iri))))))
-        (error state (str "unterminated IRI: " iri))))))
+        (fail state (str "unterminated IRI: " iri))))
+    (fail state "invalid IRI-REF")))
 
-(defmethod read-token :terminal
+(defmethod read-token :prefix-terminal
   [^PushbackReader in state]
   (skip-ws in)
-  (read-literal in state "." :doc))
+  (read-literal-or-fail in state "." :doc))
 
 (defmethod read-token :comment
   [^PushbackReader in state]
@@ -186,8 +190,8 @@
           (prn :blanks (:blanks state))
           (prn :blank id (get-in state [:blanks id]))
           (-> state (transition) (assoc ctx (get-in state [:blanks id]))))
-        (error state "illegal character after bnode")))
-    (error state "illegal bnode label")))
+        (fail state "illegal character after bnode")))
+    (fail state "illegal bnode label")))
 
 (defmethod read-token :bnode-proplist
   [^PushbackReader in {ctx :triple-ctx :as state}]
@@ -234,8 +238,8 @@
         (if (= nc \space)
           (if-let [n (resolve-pname state pname)]
             (assoc state :predicate n :state :object)
-            (error state (str "unknown prefix in pname: " pname)))
-          (error state (str "unexpected char in pname: " pname " char: " nc)))))))
+            (fail state (str "unknown prefix in pname: " pname)))
+          (fail state (str "unexpected char in pname: " pname " char: " nc)))))))
 
 (defmethod read-token :pname
   [^PushbackReader in state]
@@ -247,8 +251,8 @@
     (if (= nc \space)
       (if-let [n (resolve-pname state pname)]
         (-> state (transition) (assoc ctx n))
-        (error state (str "unknown prefix in pname: " pname)))
-      (error state (str "unexpected char in pname: " nc)))))
+        (fail state (str "unknown prefix in pname: " pname)))
+      (fail state (str "unexpected char in pname: " nc)))))
 
 (defmethod read-token :object
   [^PushbackReader in state]
@@ -269,7 +273,7 @@
       \( (assoc state :state :list :triple-ctx :object)
       \) (if (list-state? state)
            (assoc state :state :end-triple?)
-           (error state "list nesting error"))
+           (fail state "list nesting fail"))
       (assoc state :state :pname :triple-ctx :object))))
 
 (defmethod read-token :list
@@ -305,7 +309,7 @@
     (cond
      (= c \") (check \")
      (= c \') (check \')
-     :default (error state (str "illegal literal: " c n p)))))
+     :default (fail state (str "illegal literal: " c n p)))))
 
 (defmethod read-token :literal-content
   [^PushbackReader in state]
@@ -324,7 +328,7 @@
         lang (read-while in #(ok %) true)]
     (if (re-matches #"(?i)[a-z]{2,3}(-[a-z0-9]+)*" lang)
       (-> state (transition) (assoc :object (api/make-literal (:literal state) lang)))
-      (error state (str "illegal language tag: " lang)))))
+      (fail state (str "illegal language tag: " lang)))))
 
 (defmethod read-token :end-triple?
   [^PushbackReader in state]
@@ -335,7 +339,7 @@
                s2 (if (list-state? s2) (dissoc s2 :object) s2)]
            (trace :restored s2)
            s2)
-         (error state "bnode nesting error"))
+         (fail state "bnode nesting fail"))
     \) (if (list-state? state)
          (let [s2 (-> state
                       (pop-context)
@@ -343,11 +347,10 @@
                       (transition))]
            (trace :restored s2)
            s2)
-         (error state "list nesting error"))
+         (fail state "list nesting fail"))
     \. (-> state
            (emit-triple)
-           (dissoc :subject :predicate :object :literal)
-           (assoc :state :doc :comment-ok? false))
+           (assoc :state :doc))
     \, (-> state
            (emit-triple)
            (dissoc :object :literal)
@@ -356,7 +359,7 @@
            (emit-triple)
            (dissoc :predicate :object :literal)
            (assoc :state :predicate :triple-ctx :predicate :comment-ok? true))
-    (error state "non-terminated triple")))
+    (fail state "non-terminated triple")))
 
 (defn init-parser-state
   [& {:keys [prefixes]}]
@@ -371,8 +374,8 @@
      (if-let [t (first (:triples state))]
        (with-meta
          (lazy-seq
-          (cons t (parse-triples in (update-in state [:triples] rest))))
-         {:prefixes (:prefixes state)})
+          (cons t (parse-triples in (assoc state :triples (rest (:triples state))))))
+         {:prefixes (:prefixes state) :base (:base-iri state)})
        (cond
         (:error state) [state]
         (= :eof (:state state)) nil
