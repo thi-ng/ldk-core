@@ -17,6 +17,12 @@
        (map (fn [[k v]] [k (apply util/interval-set v)]))
        (into {})))
 
+(def typed-literal-patterns
+  [[#"(true|false)" "xsd:boolean"]
+   [#"[+-]?\d+" "xsd:integer"]
+   [#"[+-]?\d*.\d+" "xsd:decimal"]
+   [#"[+-]?(\d+.\d*e[+-]?\d+|.\d+e[+-]?\d+|\d+e[+-]?\d+)" "xsd:double"]])
+
 (defn trace
   [id state]
   (prn id)
@@ -109,6 +115,11 @@
       (if (= lit (apply str buf))
         (assoc state :state target)
         (fail state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
+
+(defn typed-literal?
+  [x]
+  (when-let [t (some (fn [[re t]] (when (re-matches re x) t)) typed-literal-patterns)]
+    (api/make-literal x nil t)))
 
 (defmulti parse-token
   (fn [_ state]
@@ -252,25 +263,9 @@
       (if-let [n (resolve-pname state pname)]
         (-> state (transition) (assoc ctx n))
         (if (= :object ctx)
-          ;; TODO add check for numeric & boolean
-          (cond
-           (re-matches #"(true|false)" pname)
-           (-> state
-               (transition)
-               (assoc ctx (api/make-literal pname nil "xsd:boolean")))
-           (re-matches #"[+-]?\d+" pname)
-           (-> state
-               (transition)
-               (assoc ctx (api/make-literal pname nil "xsd:integer")))
-           (re-matches #"[+-]?\d*.\d+" pname)
-           (-> state
-               (transition)
-               (assoc ctx (api/make-literal pname nil "xsd:decimal")))
-           (re-matches #"[+-]?(\d+.\d*e[+-]?\d+|.\d+e[+-]?\d+|\d+e[+-]?\d+)" pname)
-           (-> state
-               (transition)
-               (assoc ctx (api/make-literal pname nil "xsd:double")))
-           :default (fail state (str "unknown prefix in object pname: " pname)))
+          (if-let [lit (typed-literal? pname)]
+            (-> state (transition) (assoc ctx lit))
+            (fail state (str "unknown prefix in object pname: " pname)))
           (fail state (str "unknown prefix in pname: " pname))))
       (fail state (str "unexpected char in pname: " nc)))))
 
