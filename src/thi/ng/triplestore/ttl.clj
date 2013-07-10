@@ -110,16 +110,16 @@
         (assoc state :state target)
         (fail state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
 
-(defmulti read-token
+(defmulti parse-token
   (fn [_ state]
     (prn (:state state))
     (:state state)))
 
-(defmethod read-token :default
+(defmethod parse-token :default
   [^PushbackReader in state]
   (fail state (str "unimplemented state " (:state state))))
 
-(defmethod read-token :doc
+(defmethod parse-token :doc
   [^PushbackReader in state]
   (skip-ws in)
   (let [c (peek in)]
@@ -128,7 +128,7 @@
         (merge {:triple-ctx :subject :comment-ok? false :comment-ctx :doc})
         (assoc :state (get doc-transitions c :pname)))))
 
-(defmethod read-token :prefix
+(defmethod parse-token :prefix
   [^PushbackReader in state]
   (.read in)
   (condp = (char (.read in))
@@ -136,14 +136,14 @@
     \b (read-literal-or-fail in (assoc state :iri-ctx :base) "ase" :iri-ref)
     (fail state "illegal character following '@'")))
 
-(defmethod read-token :prefix-ns
+(defmethod parse-token :prefix-ns
   [^PushbackReader in state]
   (skip-ws in)
   (let [ns (read-while in #(not= 0x003a %) false)]
     ;; TODO add re-check
     (assoc state :prefix-ns ns :state :iri-ref :iri-ctx :prefix)))
 
-(defmethod read-token :iri-ref
+(defmethod parse-token :iri-ref
   [^PushbackReader in state]
   (skip-ws in)
   (if (next-char? in \<)
@@ -167,17 +167,17 @@
         (fail state (str "unterminated IRI: " iri))))
     (fail state "invalid IRI-REF")))
 
-(defmethod read-token :prefix-terminal
+(defmethod parse-token :prefix-terminal
   [^PushbackReader in state]
   (skip-ws in)
   (read-literal-or-fail in state "." :doc))
 
-(defmethod read-token :comment
+(defmethod parse-token :comment
   [^PushbackReader in state]
   (let [c (read-while in #(not (#{0x000a 0x000d} %)) false)]
     (assoc state :state (:comment-ctx state))))
 
-(defmethod read-token :bnode
+(defmethod parse-token :bnode
   [^PushbackReader in state]
   (.read in)
   (if (next-char? in \:)
@@ -193,7 +193,7 @@
         (fail state "illegal character after bnode")))
     (fail state "illegal bnode label")))
 
-(defmethod read-token :bnode-proplist
+(defmethod parse-token :bnode-proplist
   [^PushbackReader in {ctx :triple-ctx :as state}]
   (.read in)
   (skip-ws in)
@@ -214,7 +214,7 @@
                 (assoc :state :predicate :subject (:object state)))
             s2))))))
 
-(defmethod read-token :predicate
+(defmethod parse-token :predicate
   [^PushbackReader in state]
   (skip-ws in)
   (let [c (peek in)]
@@ -223,7 +223,7 @@
      (and (= c \#) (:comment-ok? state)) (assoc state :state :comment :comment-ctx :predicate)
      :default (assoc state :state :pname-pred))))
 
-(defmethod read-token :pname-pred
+(defmethod parse-token :pname-pred
   [^PushbackReader in state]
   (let [c (char (.read in))]
     (if (and (= c \a) (= (peek in) \space))
@@ -241,7 +241,7 @@
             (fail state (str "unknown prefix in pname: " pname)))
           (fail state (str "unexpected char in pname: " pname " char: " nc)))))))
 
-(defmethod read-token :pname
+(defmethod parse-token :pname
   [^PushbackReader in state]
   (let [illegal (:iri-illegal char-ranges)
         pname (read-while in #(not (illegal %)) true)
@@ -251,10 +251,30 @@
     (if (= nc \space)
       (if-let [n (resolve-pname state pname)]
         (-> state (transition) (assoc ctx n))
-        (fail state (str "unknown prefix in pname: " pname)))
+        (if (= :object ctx)
+          ;; TODO add check for numeric & boolean
+          (cond
+           (re-matches #"(true|false)" pname)
+           (-> state
+               (transition)
+               (assoc ctx (api/make-literal pname nil "xsd:boolean")))
+           (re-matches #"[+-]?\d+" pname)
+           (-> state
+               (transition)
+               (assoc ctx (api/make-literal pname nil "xsd:integer")))
+           (re-matches #"[+-]?\d*.\d+" pname)
+           (-> state
+               (transition)
+               (assoc ctx (api/make-literal pname nil "xsd:decimal")))
+           (re-matches #"[+-]?(\d+.\d*e[+-]?\d+|.\d+e[+-]?\d+|\d+e[+-]?\d+)" pname)
+           (-> state
+               (transition)
+               (assoc ctx (api/make-literal pname nil "xsd:double")))
+           :default (fail state (str "unknown prefix in object pname: " pname)))
+          (fail state (str "unknown prefix in pname: " pname))))
       (fail state (str "unexpected char in pname: " nc)))))
 
-(defmethod read-token :object
+(defmethod parse-token :object
   [^PushbackReader in state]
   (skip-ws in)
   (let [state (if (list-state? state)
@@ -276,7 +296,7 @@
            (fail state "list nesting fail"))
       (assoc state :state :pname :triple-ctx :object))))
 
-(defmethod read-token :list
+(defmethod parse-token :list
   [^PushbackReader in {ctx :triple-ctx :as state}]
   (.read in)
   (skip-ws in)
@@ -289,42 +309,43 @@
         (trace :coll-obj-s2 (assoc s2 :state :object :object nil :subject node :coll-items []))
         ))))
 
-(defmethod read-token :literal
+(defmethod parse-token :literal
   [^PushbackReader in state]
   (let [c (char (.read in))
         n (char (.read in))
         p (peek in)
         check (fn [q]
-                (cond
-                 (= n q) (cond
-                          (= p q) (assoc state :state :long-string :lit-terminator q)
-                          (= p \@) (assoc state :state :lang-tag :literal "")
-                          (= p \^) (assoc state :state :literal-type :literal "")
-                          :default (assoc state
-                                     :state :end-triple?
-                                     :triple-ctx :object
-                                     :object (api/make-literal ""))) ;; TODO add xsd:string type
-                 :default (assoc state
-                            :state :literal-content :literal n :lit-terminator q)))]
+                (if (= n q)
+                  (cond
+                   (= p q) (assoc state :state :long-string :lit-terminator q)
+                   (= p \@) (assoc state :state :lang-tag :literal "")
+                   (= p \^) (assoc state :state :literal-type :literal "")
+                   :default (assoc state
+                              :state :end-triple?
+                              :triple-ctx :object
+                              :object (api/make-literal ""))) ;; TODO add xsd:string type
+                  (assoc state
+                    :state :literal-content :literal n :lit-terminator q)))]
     (cond
      (= c \") (check \")
      (= c \') (check \')
      :default (fail state (str "illegal literal: " c n p)))))
 
-(defmethod read-token :literal-content
+(defmethod parse-token :literal-content
   [^PushbackReader in state]
   (let [terminators #{(int (:lit-terminator state)) 0x000a 0x000d}
         lit (str (:literal state) (read-while in #(not (terminators %)) true))
         c (char (.read in))
         n (peek in)]
     (if (= c (:lit-terminator state))
+      ;; TODO add regexp check
       (condp = n
         \@ (assoc state :state :lang-tag :literal lit)
         \^ (assoc state :state :literal-type :literal lit)
         (-> state (transition) (assoc :object (api/make-literal lit))))
       (fail state "unexpected line break in literal")))) ;; TODO add xsd:string type
 
-(defmethod read-token :lang-tag
+(defmethod parse-token :lang-tag
   [^PushbackReader in state]
   (.read in)
   (let [ok (:lang-tag char-ranges)
@@ -333,7 +354,7 @@
       (-> state (transition) (assoc :object (api/make-literal (:literal state) lang)))
       (fail state (str "illegal language tag: " lang)))))
 
-(defmethod read-token :end-triple?
+(defmethod parse-token :end-triple?
   [^PushbackReader in state]
   (skip-ws in)
   (condp = (char (.read in))
@@ -382,4 +403,4 @@
        (cond
         (:error state) [state]
         (= :eof (:state state)) nil
-        :default (recur in (read-token in state))))))
+        :default (recur in (parse-token in state))))))
