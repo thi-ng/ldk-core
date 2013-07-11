@@ -60,7 +60,7 @@
                        (string? %) (str "\"" % "\"")
                        (api/blank? %) (format "\"%04d\"" (blanks %))
                        (api/uri? %) (format "\"%s\"" (api/uri %))
-                       (not (api/plain-literal? %)) (format "\"%s\"@%s" (:label %) (:lang %))
+                       (:lang %) (format "\"%s\"@%s" (:label %) (:lang %))
                        :default (str "\"" (:label %) "\""))
                      [s o p])))
        triples))
