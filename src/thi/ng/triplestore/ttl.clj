@@ -39,22 +39,25 @@
       (when-let [prefix (get-in state [:prefixes (subs pname 0 idx)])]
         (api/make-resource (str prefix (subs pname (inc idx))))))))
 
+(defn resolve-iri
+  [state iri] (if (.startsWith iri "#") (str (:base-iri state) iri) iri))
+
 (defn emit-triple
   ([{:keys [subject predicate object] :as state}]
-     (prn :triple [subject predicate object])
+     ;; (prn :triple [subject predicate object])
      (update-in state [:triples] conj [subject predicate object]))
   ([state {:keys [subject predicate object]}]
-     (prn :triple [subject predicate object])
+     ;; (prn :triple [subject predicate object])
      (update-in state [:triples] conj [subject predicate object])))
 
 (defn queue-triples
   [state triples]
-  (prn :queue triples)
+  ;; (prn :queue triples)
   (update-in state [:triples] into triples))
 
 (defn push-context
   [state nest-type]
-  (trace :push state)
+  ;; (trace :push state)
   (-> state
       (update-in [:stack] #(conj (or % []) (dissoc state :stack)))
       (assoc :nest-type nest-type)))
@@ -62,7 +65,7 @@
 (defn pop-context
   [state]
   (when-let [s2 (clojure.core/peek (:stack state))]
-    (trace :pop state)
+    ;; (trace :pop state)
     (assoc s2
       :stack (pop (:stack state))
       :blanks (merge (:blanks s2) (:blanks state)))))
@@ -74,7 +77,10 @@
   {:subject :predicate :predicate :object :object :end-triple?})
 
 (def doc-transitions
-  {\@ :prefix \# :comment \_ :bnode \[ :bnode-proplist \( :list \uffff :eof})
+  {\@ :prefix \# :comment \< :iri-ref \_ :bnode \[ :bnode-proplist \( :list \uffff :eof})
+
+(def obj-transitions
+  {\< :iri-ref \" :literal \' :literal \[ :bnode-proplist \_ :bnode \( :list})
 
 (defn transition
   [state]
@@ -123,7 +129,7 @@
 
 (defmulti parse-token
   (fn [_ state]
-    (prn (:state state))
+    ;; (prn (:state state))
     (:state state)))
 
 (defmethod parse-token :default
@@ -136,7 +142,7 @@
   (let [c (peek in)]
     (-> state
         (dissoc :subject :predicate :object :literal :coll-items :nest-type)
-        (merge {:triple-ctx :subject :comment-ok? false :comment-ctx :doc})
+        (assoc :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx :doc)
         (assoc :state (get doc-transitions c :pname)))))
 
 (defmethod parse-token :prefix
@@ -160,7 +166,7 @@
   (if (next-char? in \<)
     (let [illegal (:iri-illegal char-ranges)
           iri (read-while in #(not (illegal %)) true)]
-      (trace :iri state)
+      ;;(trace :iri state)
       (if (next-char? in \>)
         (let [{ctx :iri-ctx prefix :prefix-ns} state
               state (dissoc state :prefix-ns :iri-ctx)]
@@ -171,11 +177,8 @@
                         (assoc :state :prefix-terminal))
             (-> state
                 (transition)
-                (assoc ctx (api/make-resource
-                            (if (.startsWith iri "#")
-                              (str (:base-iri state) iri)
-                              iri))))))
-        (fail state (str "unterminated IRI: " iri))))
+                (assoc ctx (api/make-resource (resolve-iri state iri))))))
+        (fail state (str "unterminated IRI-REF: " iri))))
     (fail state "invalid IRI-REF")))
 
 (defmethod parse-token :prefix-terminal
@@ -198,8 +201,8 @@
         (let [state (if (get-in state [:blanks id]) state
                         (assoc-in state [:blanks id] (api/make-blank-node)))
               ctx (:triple-ctx state)]
-          (prn :blanks (:blanks state))
-          (prn :blank id (get-in state [:blanks id]))
+          ;; (prn :blanks (:blanks state))
+          ;; (prn :blank id (get-in state [:blanks id]))
           (-> state (transition) (assoc ctx (get-in state [:blanks id]))))
         (fail state "illegal character after bnode")))
     (fail state "illegal bnode label")))
@@ -213,7 +216,7 @@
         state (if (list-state? state)
                 (update-in state [:coll-items] conj node)
                 state)]
-    (trace :bprops state)
+    ;; (trace :bprops state)
     (if (= \] (peek in))
       (do (.read in) state)
       (let [s2 (dissoc (push-context state :bnode) :coll-items)]
@@ -240,12 +243,12 @@
     (if (and (= c \a) (= (peek in) \space))
       (do
         (.read in)
-        (prn :pname-pred :rdf:type)
+        ;; (prn :pname-pred :rdf:type)
         (assoc state :predicate (:type api/RDF) :state :object))
       (let [illegal (:iri-illegal char-ranges)
             pname (str c (read-while in #(not (illegal %)) true))
             nc (char (.read in))]
-        (prn :pname-pred pname)
+        ;; (prn :pname-pred pname)
         (if (= nc \space)
           (if-let [n (resolve-pname state pname)]
             (assoc state :predicate n :state :object)
@@ -258,7 +261,7 @@
         pname (read-while in #(not (illegal %)) true)
         nc (char (.read in))
         ctx (:triple-ctx state)]
-    (prn :pname pname :ctx ctx)
+    ;; (prn :pname pname :ctx ctx)
     (if (= nc \space)
       (if-let [n (resolve-pname state pname)]
         (-> state (transition) (assoc ctx n))
@@ -278,18 +281,15 @@
                   state)
                 state)
         c (peek in)]
-    (trace :object state)
-    (condp = c
-      \< (assoc state :state :iri-ref :iri-ctx :object)
-      \" (assoc state :state :literal :triple-ctx :object)
-      \' (assoc state :state :literal :triple-ctx :object)
-      \[ (assoc state :state :bnode-proplist :triple-ctx :object) ;; TODO push stack?
-      \_ (assoc state :state :bnode :triple-ctx :object)
-      \( (assoc state :state :list :triple-ctx :object)
-      \) (if (list-state? state)
-           (assoc state :state :end-triple?)
-           (fail state "list nesting fail"))
-      (assoc state :state :pname :triple-ctx :object))))
+    ;; (trace :object state)
+    (if (= \) c)
+      (if (list-state? state)
+        (assoc state :state :end-triple?)
+        (fail state "list nesting fail"))
+      (assoc state
+        :state (get obj-transitions c :pname)
+        :triple-ctx :object
+        :iri-ctx :object))))
 
 (defmethod parse-token :list
   [^PushbackReader in {ctx :triple-ctx :as state}]
@@ -297,11 +297,12 @@
   (skip-ws in)
   (let [node (api/make-blank-node)
         state (-> state (transition) (assoc ctx node))]
-    (trace :list state)
+    ;; (trace :list state)
     (if (= \) (peek in))
       (do (.read in) (queue-triples state (api/rdf-list-triples node [])))
       (let [s2 (push-context state :list)]
-        (trace :coll-obj-s2 (assoc s2 :state :object :object nil :subject node :coll-items []))
+        ;;(trace :coll-obj-s2 (assoc s2 :state :object :object nil :subject node :coll-items []))
+        (assoc s2 :state :object :object nil :subject node :coll-items [])
         ))))
 
 (defmethod parse-token :literal
@@ -356,7 +357,7 @@
     \] (if (= :bnode (:nest-type state))
          (let [s2 (-> state (pop-context) (emit-triple state) (transition))
                s2 (if (list-state? s2) (dissoc s2 :object) s2)]
-           (trace :restored s2)
+           ;; (trace :restored s2)
            s2)
          (fail state "bnode nesting fail"))
     \) (if (list-state? state)
@@ -364,7 +365,7 @@
                       (pop-context)
                       (queue-triples (api/rdf-list-triples (:subject state) (:coll-items state)))
                       (transition))]
-           (trace :restored s2)
+           ;; (trace :restored s2)
            s2)
          (fail state "list nesting fail"))
     \. (-> state
