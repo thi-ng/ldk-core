@@ -42,7 +42,7 @@
 (defn resolve-iri
   [state iri] (if (.startsWith iri "#") (str (:base-iri state) iri) iri))
 
-(defn emit-triple
+(defn emit-curr-triple
   ([{:keys [subject predicate object] :as state}]
      ;; (prn :triple [subject predicate object])
      (update-in state [:triples] conj [subject predicate object]))
@@ -50,7 +50,7 @@
      ;; (prn :triple [subject predicate object])
      (update-in state [:triples] conj [subject predicate object])))
 
-(defn queue-triples
+(defn emit-triples
   [state triples]
   ;; (prn :queue triples)
   (update-in state [:triples] into triples))
@@ -140,10 +140,11 @@
   [^PushbackReader in state]
   (skip-ws in)
   (let [c (peek in)]
-    (-> state
-        (dissoc :subject :predicate :object :literal :coll-items :nest-type)
-        (assoc :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx :doc)
-        (assoc :state (get doc-transitions c :pname)))))
+    (parse-token in
+                 (-> state
+                     (dissoc :subject :predicate :object :literal)
+                     (assoc :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx :doc)
+                     (assoc :state (get doc-transitions c :pname))))))
 
 (defmethod parse-token :prefix
   [^PushbackReader in state]
@@ -158,7 +159,7 @@
   (skip-ws in)
   (let [ns (read-while in #(not= 0x003a %) false)]
     ;; TODO add re-check
-    (assoc state :prefix-ns ns :state :iri-ref :iri-ctx :prefix)))
+    (parse-token in (assoc state :prefix-ns ns :state :iri-ref :iri-ctx :prefix))))
 
 (defmethod parse-token :iri-ref
   [^PushbackReader in state]
@@ -166,7 +167,7 @@
   (if (next-char? in \<)
     (let [illegal (:iri-illegal char-ranges)
           iri (read-while in #(not (illegal %)) true)]
-      ;;(trace :iri state)
+      ;; (trace :iri state)
       (if (next-char? in \>)
         (let [{ctx :iri-ctx prefix :prefix-ns} state
               state (dissoc state :prefix-ns :iri-ctx)]
@@ -224,7 +225,7 @@
           (assoc s2 :state :predicate :subject (:object state))
           (if (= :object ctx)
             (-> s2
-                (emit-triple)
+                (emit-curr-triple)
                 (assoc :state :predicate :subject (:object state)))
             s2))))))
 
@@ -299,7 +300,7 @@
         state (-> state (transition) (assoc ctx node))]
     ;; (trace :list state)
     (if (= \) (peek in))
-      (do (.read in) (queue-triples state (api/rdf-list-triples node [])))
+      (do (.read in) (emit-triples state (api/rdf-list-triples node [])))
       (let [s2 (push-context state :list)]
         ;;(trace :coll-obj-s2 (assoc s2 :state :object :object nil :subject node :coll-items []))
         (assoc s2 :state :object :object nil :subject node :coll-items [])
@@ -355,7 +356,7 @@
   (skip-ws in)
   (condp = (char (.read in))
     \] (if (= :bnode (:nest-type state))
-         (let [s2 (-> state (pop-context) (emit-triple state) (transition))
+         (let [s2 (-> state (pop-context) (emit-curr-triple state) (transition))
                s2 (if (list-state? s2) (dissoc s2 :object) s2)]
            ;; (trace :restored s2)
            s2)
@@ -363,20 +364,20 @@
     \) (if (list-state? state)
          (let [s2 (-> state
                       (pop-context)
-                      (queue-triples (api/rdf-list-triples (:subject state) (:coll-items state)))
+                      (emit-triples (api/rdf-list-triples (:subject state) (:coll-items state)))
                       (transition))]
            ;; (trace :restored s2)
            s2)
          (fail state "list nesting fail"))
     \. (-> state
-           (emit-triple)
+           (emit-curr-triple)
            (assoc :state :doc))
     \, (-> state
-           (emit-triple)
+           (emit-curr-triple)
            (dissoc :object :literal)
            (assoc :state :object :comment-ok? false))
     \; (-> state
-           (emit-triple)
+           (emit-curr-triple)
            (dissoc :predicate :object :literal)
            (assoc :state :predicate :triple-ctx :predicate :comment-ok? true))
     (fail state "non-terminated triple")))
