@@ -23,6 +23,16 @@
    [#"[+-]?\d*.\d+" "xsd:decimal"]
    [#"[+-]?(\d+.\d*e[+-]?\d+|.\d+e[+-]?\d+|\d+e[+-]?\d+)" "xsd:double"]])
 
+(def pnchars-base "\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u10000-\uEFFFF")
+
+(def pnchars (str pnchars-base "_\\-0-9\u00B7\u0300-\u036F\u203F\u2040"))
+
+(def uchar (str "(\\\\u([a-f0-9]{4})|\\\\u([a-f0-9]{8}))"))
+
+(def re-patterns
+  {:iri-ref (re-pattern (str "(([^\u0000-\u0020\u003c\u003e\u0022\u007b-\u007d\u005e\u005c\u0060]|" uchar ")*)>"))
+   :bnode (re-pattern (str "[" pnchars-base "_0-9]([" pnchars "\\.]*[" pnchars "])?"))})
+
 (defn trace
   [id state]
   (prn id)
@@ -117,14 +127,17 @@
 (defn next-char? [^PushbackReader in x] (= x (char (.read in))))
 
 (defn read-while
-  ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuffer.)))
-  ([^PushbackReader in f unread-last? ^StringBuffer buf]
+  ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuilder.)))
+  ([^PushbackReader in f unread-last? ^StringBuilder buf]
      (let [c (.read in)]
        (if (and (>= c 0) (f c))
          (recur in f unread-last? (.append buf (char c)))
          (do
            (when unread-last? (.unread in c))
            (.toString buf))))))
+
+(defn read-until-ws
+  [^PushbackReader in] (read-while in #(not (Character/isWhitespace %)) false))
 
 (defn read-literal-or-fail
   [^PushbackReader in state lit target]
@@ -164,28 +177,27 @@
 
 (defn parse-token-prefix
   [^PushbackReader in state]
-  (.read in)
-  (let [state (condp = (char (.read in))
-                \p (read-literal-or-fail in state "refix" parse-token-prefix-ns)
-                \b (read-literal-or-fail in (assoc state :iri-ctx :base) "ase" parse-token-iri-ref)
-                (fail state "illegal character following '@'"))]
-    (if (:error state) state ((:state state) in state))))
+  (let [token (read-until-ws in)]
+    (condp = token
+      "@prefix" (parse-token-prefix-ns in state)
+      "@base" (parse-token-iri-ref in (assoc state :iri-ctx :base))
+      (fail state (str "illegal token following '@'" token)))))
 
 (defn parse-token-prefix-ns
   [^PushbackReader in state]
   (skip-ws in)
-  (let [ns (read-while in #(not= 0x003a %) false)]
-    ;; TODO add re-check
-    (parse-token-iri-ref in (assoc state :prefix-ns ns :iri-ctx :prefix))))
+  (let [[_ ns] (re-matches #"([A-Za-z0-9]+):" (read-until-ws in))]
+    (if ns
+      (parse-token-iri-ref in (assoc state :prefix-ns ns :iri-ctx :prefix))
+      (fail state (str "illegal prefix: " _)))))
 
 (defn parse-token-iri-ref
   [^PushbackReader in state]
   (skip-ws in)
   (if (next-char? in \<)
-    (let [illegal (:iri-illegal char-ranges)
-          iri (read-while in #(not (illegal %)) true)]
+    (let [[_ iri] (re-matches (:iri-ref re-patterns) (read-until-ws in))]
       ;; (trace :iri state)
-      (if (next-char? in \>)
+      (if iri
         (let [{ctx :iri-ctx prefix :prefix-ns} state
               state (condp = ctx
                       :base (assoc state :base-iri iri :state parse-token-prefix-terminal)
@@ -196,7 +208,7 @@
                           (transition)
                           (assoc ctx (api/make-resource (resolve-iri state iri)))))]
           ((:state state) in (dissoc state :prefix-ns :iri-ctx)))
-        (fail state (str "unterminated IRI-REF: " iri))))
+        (fail state (str "unterminated IRI-REF: " _))))
     (fail state "invalid IRI-REF")))
 
 (defn parse-token-prefix-terminal
@@ -214,9 +226,9 @@
   [^PushbackReader in state]
   (.read in)
   (if (next-char? in \:)
-    (let [illegal (:iri-illegal char-ranges)
-          id (read-while in #(not (illegal %)) true)]
-      (if (next-char? in \space)
+    (let [token (read-until-ws in)
+          [id] (re-matches (:bnode re-patterns) token)]
+      (if id
         (let [ctx (:triple-ctx state)
               state (if (get-in state [:blanks id])
                       state
@@ -225,7 +237,7 @@
                         (transition)
                         (assoc ctx (get-in state [:blanks id])))]
           ((:state state) in state))
-        (fail state "illegal character after bnode")))
+        (fail state (str "illegal bnode label" token))))
     (fail state "illegal bnode label")))
 
 (defn parse-token-bnode-proplist
