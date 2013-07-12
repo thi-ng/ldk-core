@@ -60,7 +60,7 @@
                        (string? %) (str "\"" % "\"")
                        (api/blank? %) (format "\"%04d\"" (blanks %))
                        (api/uri? %) (format "\"%s\"" (api/uri %))
-                       (:lang %) (format "\"%s\"@%s" (:label %) (:lang %))
+                       (:lang %) (format "\"%s@%s\"" (:label %) (:lang %))
                        :default (str "\"" (:label %) "\""))
                      [s o p])))
        triples))
@@ -77,6 +77,21 @@
                             (set))
                        (range))]
     (->> (mapcat (fn [[k v]] (triples->dot blanks (models k) (api/select ds k nil nil nil))) (:models ds))
+         (sort)
+         (apply str)
+         (format "digraph g {\n\nnode[%s];\nedge[%s];\n\n%s}"
+                 (dot-attribs nodes)
+                 (dot-attribs edges))
+         (spit f))))
+
+(defn write-dot-triples
+  [q {:keys [nodes edges models]} f]
+  (let [blanks (zipmap (->> q
+                            (mapcat identity)
+                            (filter #(when-not (string? %) (api/blank? %)))
+                            (set))
+                       (range))]
+    (->> (triples->dot blanks (:default models) q)
          (sort)
          (apply str)
          (format "digraph g {\n\nnode[%s];\nedge[%s];\n\n%s}"
