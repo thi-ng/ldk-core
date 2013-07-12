@@ -27,11 +27,45 @@
 
 (def pnchars (str pnchars-base "_\\-0-9\u00B7\u0300-\u036F\u203F\u2040"))
 
-(def uchar (str "(\\\\u([a-f0-9]{4})|\\\\u([a-f0-9]{8}))"))
+(def uchar (str "(?:\\\\u([a-f0-9]{4}))|(?:\\\\u([a-f0-9]{8}))"))
 
 (def re-patterns
-  {:iri-ref (re-pattern (str "(([^\u0000-\u0020\u003c\u003e\u0022\u007b-\u007d\u005e\u005c\u0060]|" uchar ")*)>"))
-   :bnode (re-pattern (str "[" pnchars-base "_0-9]([" pnchars "\\.]*[" pnchars "])?"))})
+  {:iri-ref #"<((?:[^\x00-\x20<>\"\{\}\|\^\`]|\\[uU])*)>"
+   :bnode (re-pattern (str "[" pnchars-base "_0-9]([" pnchars "\\.]*[" pnchars "])?"))
+   :escape #"\\u([a-fA-F0-9]{4})|\\U([a-fA-F0-9]{8})|\\[uU]|\\(.)"})
+
+(def esc-replacements
+  {"\\" \\ "'" \' "\"" \"
+   "n" "\n" "r" "\r" "t" "\t" "f" "\f" "b" "\b"
+   "_" \_ "~" \~ "." \. "-" \- "!" \! "$" \$ "&" \&
+   "(" \( ")" \) "*" \* "+" \+ "," \, ";" \; "=" \=
+   "/" \/ "?" \? "#" \# "@" \@ "%" \%})
+
+(defn re-replace
+  [re s f]
+  (loop [m (re-matcher re s) b (StringBuilder.) idx 0]
+    (if (.find m)
+      (let [mr (.toMatchResult m)]
+        (.append b (subs s idx (.start mr)))
+        (when-let [s (f mr)] (recur m (.append b s) (.end mr))))
+      (.toString (.append b (subs s idx))))))
+
+(defn unescape
+  [s]
+  (when s
+    (re-replace
+     (:escape re-patterns) s
+     (fn [mr]
+       (let [u4 (.group mr 1) u8 (.group mr 2) uc (.group mr 3)]
+         (cond
+          u4 (char (Integer/parseInt u4 16))
+          u8 (let [c (Long/parseLong u8 16)]
+               (if (< c 0xefff)
+                 (char c)
+                 (str (char (+ 0xd800 (/ (- c 0x10000) 0x400)))
+                      (char (+ 0xdc00 (rem (- c 0x10000) 0x400))))))
+          uc (esc-replacements uc)
+          :default nil))))))
 
 (defn trace
   [id state]
@@ -139,6 +173,17 @@
 (defn read-until-ws
   [^PushbackReader in] (read-while in #(not (Character/isWhitespace %)) false))
 
+(defn read-until-literal
+  [^PushbackReader in lit]
+  (let [len (count lit)]
+    (loop [buf (StringBuilder.) bl 1]
+      (let [c (.read in)]
+        (when (>= c 0)
+          (.append buf (char c))
+          (if (and (>= bl len) (= (.substring buf (- bl len)) lit))
+            (.substring buf 0 (- bl len))
+            (recur buf (inc bl))))))))
+
 (defn read-literal-or-fail
   [^PushbackReader in state lit target]
   (let [len (count lit)
@@ -149,6 +194,23 @@
       (if (= lit (apply str buf))
         (assoc state :state target)
         (fail state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
+
+(defn read-iri-ref
+  [^PushbackReader in state]
+  (let [[_ iri] (re-matches (:iri-ref re-patterns) (read-until-ws in))
+        iri (unescape iri)]
+    (if iri
+      [iri state]
+      [nil (fail state (str "invalid IRI-REF: " _))])))
+
+(defn read-pname
+  [^PushbackReader in state]
+  (let [illegal (:iri-illegal char-ranges)
+        pname (read-while in #(not (illegal %)) true)
+        nc (.read in)]
+    (if (Character/isWhitespace nc)
+      [(resolve-pname state pname) state]
+      [nil (fail state (str "unexpected char in pname: " (char nc)))])))
 
 (defn typed-literal?
   [x]
@@ -186,7 +248,7 @@
 (defn parse-token-prefix-ns
   [^PushbackReader in state]
   (skip-ws in)
-  (let [[_ ns] (re-matches #"([A-Za-z0-9]+):" (read-until-ws in))]
+  (let [[_ ns] (re-matches #"([A-Za-z0-9]*):" (read-until-ws in))]
     (if ns
       (parse-token-iri-ref in (assoc state :prefix-ns ns :iri-ctx :prefix))
       (fail state (str "illegal prefix: " _)))))
@@ -194,22 +256,19 @@
 (defn parse-token-iri-ref
   [^PushbackReader in state]
   (skip-ws in)
-  (if (next-char? in \<)
-    (let [[_ iri] (re-matches (:iri-ref re-patterns) (read-until-ws in))]
-      ;; (trace :iri state)
-      (if iri
-        (let [{ctx :iri-ctx prefix :prefix-ns} state
-              state (condp = ctx
-                      :base (assoc state :base-iri iri :state parse-token-prefix-terminal)
-                      :prefix (-> state
-                                  (update-in [:prefixes] conj [prefix iri])
-                                  (assoc :state parse-token-prefix-terminal))
-                      (-> state
-                          (transition)
-                          (assoc ctx (api/make-resource (resolve-iri state iri)))))]
-          ((:state state) in (dissoc state :prefix-ns :iri-ctx)))
-        (fail state (str "unterminated IRI-REF: " _))))
-    (fail state "invalid IRI-REF")))
+  (let [[iri state] (read-iri-ref in state)]
+    (if iri
+      (let [{ctx :iri-ctx prefix :prefix-ns} state
+            state (condp = ctx
+                    :base (assoc state :base-iri iri :state parse-token-prefix-terminal)
+                    :prefix (-> state
+                                (update-in [:prefixes] conj [prefix iri])
+                                (assoc :state parse-token-prefix-terminal))
+                    (-> state
+                        (transition)
+                        (assoc ctx (api/make-resource (resolve-iri state iri)))))]
+        ((:state state) in (dissoc state :prefix-ns :iri-ctx)))
+      state)))
 
 (defn parse-token-prefix-terminal
   [^PushbackReader in state]
@@ -290,10 +349,10 @@
   [^PushbackReader in state]
   (let [illegal (:iri-illegal char-ranges)
         pname (read-while in #(not (illegal %)) true)
-        nc (char (.read in))
+        nc (.read in)
         ctx (:triple-ctx state)]
     ;; (prn :pname pname :ctx ctx)
-    (if (= nc \space)
+    (if (Character/isWhitespace nc)
       (if-let [n (resolve-pname state pname)]
         (let [state (-> state (transition) (assoc ctx n))]
           ((:state state) in state))
@@ -303,7 +362,7 @@
               ((:state state) in state))
             (fail state (str "unknown prefix in object pname: " pname)))
           (fail state (str "unknown prefix in pname: " pname))))
-      (fail state (str "unexpected char in pname: " nc)))))
+      (fail state (str "unexpected char in pname: " (char nc))))))
 
 (defn parse-token-object
   [^PushbackReader in state]
@@ -342,7 +401,7 @@
         trans (fn [q]
                 (if (= n q)
                   (cond
-                   (= p q) (parse-token-long-string in (assoc state :lit-terminator q))
+                   (= p q) (parse-token-long-string in (assoc state :lit-terminator (str q q q)))
                    (= p \@) (parse-token-lang-tag in (assoc state :literal ""))
                    (= p \^) (parse-token-literal-type in (assoc state :literal ""))
                    :default (parse-token-end-triple?
@@ -370,6 +429,19 @@
           ((:state state) in state)))
       (fail state "unexpected line break in literal")))) ;; TODO add xsd:string type
 
+(defn parse-token-long-string
+  [^PushbackReader in state]
+  (.read in)
+  (if-let [lit (read-until-literal in (:lit-terminator state))]
+    (if-let [lit (unescape lit)]
+      (condp = (peek in)
+        \@ (parse-token-lang-tag in (assoc state :literal lit))
+        \^ (parse-token-literal-type in (assoc state :literal lit))
+        (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
+          ((:state state) in state)))
+      (fail state (str "illegal escape sequence in literal: " lit)))
+    (fail state "unterminated literal")))
+
 (defn parse-token-lang-tag
   [^PushbackReader in state]
   (.read in)
@@ -379,6 +451,16 @@
       (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) lang)))]
         ((:state state) in state))
       (fail state (str "illegal language tag: " lang)))))
+
+(defn parse-token-literal-type
+  [^PushbackReader in state]
+  (.read in)
+  (if (next-char? in \^)
+    (let [[iri state] (if (= (peek in) \<) (read-iri-ref in state) (read-pname in state))]
+      (if iri
+        (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil iri)))]
+          ((:state state) in state))
+        state))))
 
 (defn parse-token-end-triple?
   [^PushbackReader in state]
@@ -444,10 +526,8 @@
       (init-parser-state)))
   ([^PushbackReader in state]
      (if-let [t (first (:triples state))]
-       (with-meta
-         (lazy-seq
-          (cons t (parse-triples in (assoc state :triples (rest (:triples state))))))
-         {:prefixes (:prefixes state) :base (:base-iri state)})
+       (lazy-seq
+        (cons t (parse-triples in (assoc state :triples (rest (:triples state))))))
        (cond
         (:error state) [state]
         (:eof state) nil
