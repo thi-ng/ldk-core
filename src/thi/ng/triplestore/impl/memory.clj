@@ -168,7 +168,7 @@
     (models id)))
 
 (defn make-store
-  [& {:as ns}] (MemStore. (merge ns/*default-ns-map* ns) {} {} {} {}))
+  [& {:as ns}] (MemStore. (merge ns/default-namespaces ns) {} {} {} {}))
 
 (defn make-dataset
   [& ns] (MemDataset. {:default (apply make-store ns)}))

@@ -3,7 +3,7 @@
   (:require
    [thi.ng.triplestore
     [api :as api]
-    [namespaces :refer [*default-ns-map*]]
+    [namespaces :as ns :refer [default-namespaces]]
     [util :as util]]
    [clojure.string :as str]
    [clojure.java.io :as io]
@@ -94,16 +94,8 @@
     (select-keys state [:subject :predicate :object :triple-ctx :state :coll-items])))
   state)
 
-(defn resolve-pname
-  [state ^String pname]
-  (when pname
-    (let [idx (.indexOf pname ":")]
-      (when (>= idx 0)
-        (when-let [prefix (get-in state [:prefixes (subs pname 0 idx)])]
-          (api/make-resource (str prefix (subs pname (inc idx)))))))))
-
 (defn resolve-iri
-  [state ^String iri] (if (.startsWith iri "#") (str (:base-iri state) iri) iri))
+  [state ^String iri] (if (neg? (.indexOf iri ":")) (str (:base-iri state) iri) iri))
 
 (defn emit-curr-triple
   ([{:keys [subject predicate object triples] :as state}]
@@ -239,10 +231,10 @@
      (let [src (str prepend (read-until-ws in))
            [pname] (re-matches (:pname re-patterns) src)
            uname (unescape pname)
-           rname (resolve-pname state uname)]
+           rname (ns/resolve-pname (:prefixes state) uname)]
        ;; (prn :read-pname rname uname src)
        (if rname
-         [rname state src]
+         [(api/make-resource rname) state src]
          [nil (fail state (str "invalid pname: " src)) src]))))
 
 (defn typed-literal  [x]
@@ -560,7 +552,7 @@
 
 (defn init-parser-state
   [& {:keys [prefixes]}]
-  {:state parse-token-doc :prefixes (or prefixes {}) :blanks {}})
+  {:state parse-token-doc :prefixes (or prefixes default-namespaces) :blanks {}})
 
 (defn parse-triples
   ([in]

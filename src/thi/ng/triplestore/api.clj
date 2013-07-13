@@ -1,4 +1,6 @@
-(ns thi.ng.triplestore.api)
+(ns thi.ng.triplestore.api
+  (:require
+   [thi.ng.triplestore.namespaces :as n]))
 
 (defprotocol PModel
   (add-statement [this s p o] [this g s p o])
@@ -96,20 +98,10 @@
   ([label lang type] (NodeLiteral. label lang type)))
 
 (def RDF
-  {:type (make-resource "rdf:type")
-   :statement (make-resource "rdf:Statement")
-   :subject (make-resource "rdf:subject")
-   :predicate (make-resource "rdf:predicate")
-   :object (make-resource "rdf:object")
-   :membership "rdf:_"
-   :alt (make-resource "rdf:Alt")
-   :bag (make-resource "rdf:Bag")
-   :list (make-resource "rdf:List")
-   :seq (make-resource "rdf:Seq")
-   :first (make-resource "rdf:first")
-   :rest (make-resource "rdf:rest")
-   :nil (make-resource "rdf:nil")
-   })
+  (reduce
+   (fn [m k] (assoc m k (make-resource (k n/RDF))))
+   {} [:type :statement :subject :predicate :object
+       :alt :bag :list :seq :first :rest :nil]))
 
 (defn add-many
   [store & statements]
@@ -125,7 +117,7 @@
      (->> coll
           (map-indexed
            (fn [i v]
-             [node (make-resource (str (:membership RDF) (inc i))) v]))
+             [node (make-resource (str (n/default-namespaces "rdf") "_" (inc i))) v]))
           (cons [node (:type RDF) (c-type RDF)]))))
 
 (defn rdf-list-triples
@@ -178,9 +170,9 @@
   ([store triples extra] (add-reified-group store (make-blank-node) triples extra))
   ([store node triples extra]
      (let [[store coll] (reduce
-                          (fn [[ds nodes] t]
-                            (let [n (make-blank-node)]
-                              [(add-reified-statement ds n t) (conj nodes n)]))
-                          [store []] triples)
+                         (fn [[ds nodes] t]
+                           (let [n (make-blank-node)]
+                             [(add-reified-statement ds n t) (conj nodes n)]))
+                         [store []] triples)
            store (add-bag store node coll)]
        (apply add-many store (map #(cons node %) extra)))))
