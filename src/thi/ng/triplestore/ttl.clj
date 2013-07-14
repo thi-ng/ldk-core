@@ -40,7 +40,7 @@
 
 (def pn-local (str "(([" pn-chars-u "\\:\\d])|" plx ")((([" pn-chars "\\.\\:])|" plx ")*(([" pn-chars "\\:])|" plx "))?"))
 
-(def pname-ns (str pn-prefix "?:"))
+(def pname-ns (str "(" pn-prefix "?):"))
 
 (def pname-ln (str pname-ns pn-local))
 
@@ -50,7 +50,8 @@
   {:iri-ref #"<((?:[^\x00-\x20<>\"\{\}\|\^\`]|\\[uU])*)>"
    :bnode (re-pattern (str "[" pn-chars-base "_0-9]([" pn-chars "\\.]*[" pn-chars "])?"))
    :escape #"\\u([a-fA-F0-9]{4})|\\U([a-fA-F0-9]{8})|\\[uU]|\\(.)"
-   :pname (re-pattern (str pname-ln "|" pname-ns))})
+   :pname (re-pattern (str pname-ln "|" pname-ns))
+   :pname-ns (re-pattern pname-ns)})
 
 (def esc-replacements
   {"\\" \\ "'" \' "\"" \"
@@ -101,20 +102,29 @@
   ([{:keys [subject predicate object triples] :as state}]
      ;; (prn :triple [subject predicate object])
      (assoc state :triples (conj triples [subject predicate object])))
-  ([{:keys [triples] :as state} {:keys [subject predicate object]}]
+  ([state {:keys [subject predicate object]}]
      ;; (prn :triple [subject predicate object])
-     (assoc state :triples (conj triples [subject predicate object]))))
+     (assoc state :triples (conj (:triples state) [subject predicate object]))))
 
 (defn emit-triples
-  [{:keys [triples] :as state} triple-coll]
-  ;; (prn :queue triples)
-  (assoc state :triples (into triples triple-coll)))
+  [state triple-coll]
+  (assoc state :triples (concat (:triples state) triple-coll)))
+
+(defn add-prefix
+  [state prefix iri]
+  (when-let [h (get-in state [:handlers :on-prefix])] (h prefix iri))
+  (assoc state :prefixes (assoc (:prefixes state) prefix iri)))
+
+(defn set-base-iri
+  [state iri]
+  (when-let [h (get-in state [:handlers :on-base])] (h iri))
+  (assoc state :base-iri iri))
 
 (defn push-context
   [state nest-type]
   ;; (trace :push state)
   (-> state
-      (update-in [:stack] #(conj (or % []) (dissoc state :stack)))
+      (assoc :stack (conj (get state :stack []) (dissoc state :stack)))
       (assoc :nest-type nest-type)))
 
 (defn pop-context
@@ -129,37 +139,34 @@
 (defn bnode-state? [state] (= :bnode (:nest-type state)))
 
 (declare
- parse-token-doc
- parse-token-eof
- parse-token-comment
- parse-token-prefix
- parse-token-prefix-ns
- parse-token-prefix-terminal
- parse-token-iri-ref
- parse-token-bnode
- parse-token-bnode-proplist
- parse-token-predicate
- parse-token-pname
- parse-token-object
- parse-token-list
- parse-token-literal
- parse-token-literal-content
- parse-token-literal-type
- parse-token-long-string
- parse-token-lang-tag
- parse-token-end-triple?
- )
+ parse-doc
+ parse-eof
+ parse-comment
+ parse-prefix
+ parse-prefix-ns
+ parse-prefix-terminal
+ parse-iri-ref
+ parse-bnode
+ parse-bnode-proplist
+ parse-predicate
+ parse-pname
+ parse-object
+ parse-list
+ parse-literal
+ parse-literal-content
+ parse-literal-type
+ parse-long-string
+ parse-lang-tag
+ parse-end-triple)
 
 (declare spo-transitions doc-transitions obj-transitions)
 
 (defn transition
   [state]
-  (let [state (assoc state
-                :state (if (list-state? state)
-                         parse-token-object
-                         (spo-transitions (:triple-ctx state))))]
-    ;; (prn :transition (dissoc state :coll-items :stack :prefixes :blanks))
-    state))
+  (assoc state
+    :state (if (list-state? state)
+             parse-object
+             (spo-transitions (:triple-ctx state)))))
 
 (defn fail [state msg] (assoc state :error msg))
 
@@ -176,9 +183,9 @@
 (defn read-while
   ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuilder.)))
   ([^PushbackReader in f unread-last? ^StringBuilder buf]
-     (let [c (.read in)]
+     (loop [c (.read in) buf buf]
        (if (and (>= c 0) (f c))
-         (recur in f unread-last? (.append buf (char c)))
+         (recur (.read in) (.append buf (char c)))
          (do
            (when unread-last? (.unread in c))
            (.toString buf))))))
@@ -205,17 +212,6 @@
                         (recur buf (inc bl)))
            :default (recur buf (inc bl))))))))
 
-(defn read-literal-or-fail
-  [^PushbackReader in state lit target]
-  (let [len (count lit)
-        buf (make-array Character/TYPE len)
-        c (.read in buf 0 len)]
-    (if (< c len)
-      (fail state "unexpected EOF")
-      (if (= lit (apply str buf))
-        (assoc state :state target)
-        (fail state (str "expected '" lit "', but got '" (apply str buf) "'"))))))
-
 (defn read-iri-ref
   [^PushbackReader in state]
   (let [src (read-until-ws in)
@@ -230,87 +226,76 @@
   ([^PushbackReader in state prepend]
      (let [src (str prepend (read-until-ws in))
            [pname] (re-matches (:pname re-patterns) src)
-           uname (unescape pname)
-           rname (ns/resolve-pname (:prefixes state) uname)]
-       ;; (prn :read-pname rname uname src)
-       (if rname
-         [(api/make-resource rname) state src]
+           pname (ns/resolve-pname (:prefixes state) (unescape pname))]
+       (if pname
+         [(api/make-resource pname) state src]
          [nil (fail state (str "invalid pname: " src)) src]))))
 
 (defn typed-literal  [x]
   (when-let [t (some (fn [[re t]] (when (re-matches re x) t)) typed-literal-patterns)]
     (api/make-literal x nil t)))
 
-(defmulti parse-token*
-  (fn [_ state]
-    ;; (prn (:state state))
-    (:state state)))
+(defn parse-eof [_ state] (assoc state :eof true))
 
-(defn parse-token-missing
-  [^PushbackReader in state]
-  (fail state (str "unimplemented state " (:state state))))
-
-(defn parse-token-eof  [_ state] (assoc state :eof true))
-
-(defn parse-token-doc
+(defn parse-doc
   [^PushbackReader in state]
   ;; (prn :doc)
   (skip-ws in)
-  (let [c (peek in)
-        state (-> state
-                  (dissoc :subject :predicate :object :literal)
-                  (assoc :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx parse-token-doc))]
-    ((get doc-transitions c parse-token-pname) in state)))
+  ((get doc-transitions (peek in) parse-pname) in
+   (assoc state
+     :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx parse-doc)))
 
-(defn parse-token-prefix
+(defn parse-prefix
   [^PushbackReader in state]
   ;; (prn :prefix)
   (let [token (read-until-ws in)]
     (condp = token
-      "@prefix" (parse-token-prefix-ns in state)
-      "@base" (parse-token-iri-ref in (assoc state :iri-ctx :base))
+      "@prefix" (parse-prefix-ns in (assoc state :sparql-prefix false))
+      "@base" (parse-iri-ref in (assoc state :iri-ctx :base :sparql-prefix false))
       (fail state (str "illegal token following '@'" token)))))
 
-(defn parse-token-prefix-ns
+(defn parse-prefix-ns
   [^PushbackReader in state]
   ;; (prn :prefix-ns)
   (skip-ws in)
-  (let [[_ ns] (re-matches #"([A-Za-z0-9]*):" (read-until-ws in))]
+  (let [src (read-until-ws in)
+        [_ ns] (re-matches (:pname-ns re-patterns) src)]
     (if ns
-      (parse-token-iri-ref in (assoc state :prefix-ns ns :iri-ctx :prefix))
-      (fail state (str "illegal prefix: " _)))))
+      (parse-iri-ref in (assoc state :prefix-ns ns :iri-ctx :prefix))
+      (fail state (str "illegal prefix: " src)))))
 
-(defn parse-token-iri-ref
+(defn parse-iri-ref
   [^PushbackReader in state]
   ;; (prn :iri-ref)
   (skip-ws in)
   (let [[iri state] (read-iri-ref in state)]
     (if iri
-      (let [{ctx :iri-ctx prefix :prefix-ns} state
-            state (condp = ctx
-                    :base (assoc state :base-iri iri :state parse-token-prefix-terminal)
-                    :prefix (-> state
-                                (update-in [:prefixes] conj [prefix iri])
-                                (assoc :state parse-token-prefix-terminal))
-                    (-> state
-                        (transition)
-                        (assoc ctx (api/make-resource (resolve-iri state iri)))))]
-        ((:state state) in (dissoc state :prefix-ns :iri-ctx)))
+      (let [{ctx :iri-ctx prefix :prefix-ns} state]
+        (condp = ctx
+          :base (parse-prefix-terminal in (set-base-iri state iri))
+          :prefix (parse-prefix-terminal in (add-prefix state prefix iri))
+          (-> state
+              (assoc ctx (api/make-resource (resolve-iri state iri)))
+              (dissoc :prefix-ns :iri-ctx)
+              (transition))))
       state)))
 
-(defn parse-token-prefix-terminal
+(defn parse-prefix-terminal
   [^PushbackReader in state]
-  ;; (prn :terminal)
+  ;; (prn :terminal (:sparql-prefix state))
   (skip-ws in)
-  (let [state (read-literal-or-fail in state "." parse-token-doc)]
-    (if (:error state) state ((:state state) in state))))
+  (if (:sparql-prefix state)
+    (-> state (dissoc :prefix-ns :iri-ctx) (assoc :state parse-doc))
+    (if (next-char? in \.)
+      (-> state (dissoc :prefix-ns :iri-ctx) (assoc :state parse-doc))
+      (fail state (str "unterminated prefix or base declaration: " (:prefix-ns state))))))
 
-(defn parse-token-comment
+(defn parse-comment
   [^PushbackReader in state]
   (let [c (read-while in #(not (#{0x000a 0x000d} %)) false)]
     ((:comment-ctx state) in state)))
 
-(defn parse-token-bnode
+(defn parse-bnode
   [^PushbackReader in state]
   ;; (prn :comment)
   (.read in)
@@ -329,7 +314,7 @@
         (fail state (str "illegal bnode label" token))))
     (fail state "illegal bnode label")))
 
-(defn parse-token-bnode-proplist
+(defn parse-bnode-proplist
   [^PushbackReader in {ctx :triple-ctx :as state}]
   ;; (prn :bnode-proplist)
   (.read in)
@@ -345,49 +330,55 @@
       (do (.read in) state)
       (let [s2 (dissoc (push-context state :bnode) :coll-items)]
         (if (list-state? state)
-          (parse-token-predicate in (assoc s2 :subject (:object state)))
+          (parse-predicate in (assoc s2 :subject (:object state)))
           (if (= :object ctx)
             (-> s2
                 (emit-curr-triple)
-                (assoc :state parse-token-predicate :subject (:object state)))
+                (assoc :state parse-predicate :subject (:object state)))
             ((:state s2) in s2)))))))
 
-(defn parse-token-predicate
+(defn parse-predicate
   [^PushbackReader in state]
   ;; (prn :predicate)
   (skip-ws in)
   (let [c (peek in)]
     (cond
-     (= c \<) (parse-token-iri-ref in (assoc state :iri-ctx :predicate))
-     (and (= c \#) (:comment-ok? state)) (parse-token-comment in (assoc state :comment-ctx parse-token-predicate))
+     (= c \<) (parse-iri-ref in (assoc state :iri-ctx :predicate))
+     (and (= c \#) (:comment-ok? state)) (parse-comment in (assoc state :comment-ctx parse-predicate))
      :default
      (let [c (char (.read in))]
        ;; (prn :c c)
        (if (and (= c \a) (= (peek in) \space))
-         (parse-token-object in (assoc state :predicate (:type api/RDF) :triple-ctx :object))
+         (parse-object in (assoc state :predicate (:type api/RDF) :triple-ctx :object))
          (let [[pname state src] (read-pname in state c)]
            ;; (prn :pname-pred pname src (:error state))
            (if pname
-             (parse-token-object in (assoc state :predicate pname :triple-ctx :object))
+             (parse-object in (assoc state :predicate pname :triple-ctx :object))
              state)))))))
 
-(defn parse-token-pname
+(defn parse-pname
   [^PushbackReader in state]
   ;; (prn :pname)
   (let [[pname state src] (read-pname in state)
         ctx (:triple-ctx state)]
-    ;;(prn :pname pname src :ctx ctx)
+    ;; (prn :pname pname src :ctx ctx)
     (if pname
       (let [state (-> state (transition) (assoc ctx pname))]
         ((:state state) in state))
-      (if (= :object ctx)
-        (if-let [lit (typed-literal src)]
-          (let [state (-> state (transition) (assoc ctx lit) (dissoc :error))]
-            ((:state state) in state))
-          state)
+      (condp = ctx
+        :subject (condp = src
+                   "PREFIX" (parse-prefix-ns
+                             in (-> state (dissoc :error) (assoc :sparql-prefix true)))
+                   "BASE" (parse-iri-ref
+                           in (-> state (dissoc :error) (assoc :iri-ctx :base :sparql-prefix true)))
+                   state)
+        :object (if-let [lit (typed-literal src)]
+                  (let [state (-> state (transition) (assoc ctx lit) (dissoc :error))]
+                    ((:state state) in state))
+                  state)
         state))))
 
-(defn parse-token-object
+(defn parse-object
   [^PushbackReader in state]
   ;; (prn :object)
   (skip-ws in)
@@ -400,12 +391,12 @@
     ;; (trace :object state)
     (if (= \) c)
       (if (list-state? state)
-        (parse-token-end-triple? in state)
+        (parse-end-triple in state)
         (fail state "list nesting fail"))
-      ((get obj-transitions c parse-token-pname)
+      ((get obj-transitions c parse-pname)
        in (assoc state :triple-ctx :object :iri-ctx :object)))))
 
-(defn parse-token-list
+(defn parse-list
   [^PushbackReader in {ctx :triple-ctx :as state}]
   ;; (prn :list)
   (.read in)
@@ -416,9 +407,9 @@
     (if (= \) (peek in))
       (do (.read in) (emit-triples state (api/rdf-list-triples node [])))
       (let [s2 (push-context state :list)]
-        (parse-token-object in (assoc s2 :object nil :subject node :coll-items []))))))
+        (parse-object in (assoc s2 :object nil :subject node :coll-items []))))))
 
-(defn parse-token-literal
+(defn parse-literal
   [^PushbackReader in state]
   ;; (prn :literal)
   (let [c (char (.read in))
@@ -427,20 +418,20 @@
         trans (fn [q]
                 (if (= n (char q))
                   (cond
-                   (= p q) (parse-token-long-string in (assoc state :lit-terminator (str q q q)))
-                   (= p \@) (parse-token-lang-tag in (assoc state :literal ""))
-                   (= p \^) (parse-token-literal-type in (assoc state :literal ""))
-                   :default (parse-token-end-triple?
+                   (= p q) (parse-long-string in (assoc state :lit-terminator (str q q q)))
+                   (= p \@) (parse-lang-tag in (assoc state :literal ""))
+                   (= p \^) (parse-literal-type in (assoc state :literal ""))
+                   :default (parse-end-triple
                              in (assoc state
                                   :triple-ctx :object
                                   :object (api/make-literal ""))))
-                  (parse-token-literal-content in (assoc state :literal n :lit-terminator q))))]
+                  (parse-literal-content in (assoc state :literal n :lit-terminator q))))]
     (cond
      (= c \") (trans \")
      (= c \') (trans \')
      :default (fail state (str "illegal literal: " c n p)))))
 
-(defn parse-token-literal-content
+(defn parse-literal-content
   [^PushbackReader in state]
   ;; (prn :lit-content)
   (let [terminators #{(int (:lit-terminator state)) 0x000a 0x000d}
@@ -450,27 +441,27 @@
     (if (= c (char (:lit-terminator state)))
       ;; TODO add regexp check
       (condp = n
-        \@ (parse-token-lang-tag in (assoc state :literal lit))
-        \^ (parse-token-literal-type in (assoc state :literal lit))
+        \@ (parse-lang-tag in (assoc state :literal lit))
+        \^ (parse-literal-type in (assoc state :literal lit))
         (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
           ((:state state) in state)))
       (fail state "unexpected line break in literal")))) ;; TODO add xsd:string type
 
-(defn parse-token-long-string
+(defn parse-long-string
   [^PushbackReader in state]
   ;; (prn :long-string)
   (.read in)
   (if-let [lit (read-until-literal in (:lit-terminator state))]
     (if-let [lit (unescape lit)]
       (condp = (peek in)
-        \@ (parse-token-lang-tag in (assoc state :literal lit))
-        \^ (parse-token-literal-type in (assoc state :literal lit))
+        \@ (parse-lang-tag in (assoc state :literal lit))
+        \^ (parse-literal-type in (assoc state :literal lit))
         (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
           ((:state state) in state)))
       (fail state (str "illegal escape sequence in literal: " lit)))
     (fail state "unterminated literal")))
 
-(defn parse-token-lang-tag
+(defn parse-lang-tag
   [^PushbackReader in state]
   ;; (prn :lang)
   (.read in)
@@ -481,7 +472,7 @@
         ((:state state) in state))
       (fail state (str "illegal language tag: " lang)))))
 
-(defn parse-token-literal-type
+(defn parse-literal-type
   [^PushbackReader in state]
   ;; (prn :lit-type)
   (.read in)
@@ -492,18 +483,18 @@
           ((:state state) in state))
         state))))
 
-(defn parse-token-end-triple?
+(defn parse-end-triple
   [^PushbackReader in state]
   ;; (prn :end-triple)
   (skip-ws in)
   (condp = (char (.read in))
-    \] (if (= :bnode (:nest-type state))
+    \] (if (bnode-state? state)
          (let [s2 (-> state (pop-context) (emit-curr-triple state))]
            (if (= :subject (:triple-ctx s2))
              (do
                (skip-ws in)
                (if (= \. (peek in))
-                 (do (.read in) (assoc s2 :state parse-token-doc))
+                 (do (.read in) (assoc s2 :state parse-doc))
                  (transition s2)))
              (if (list-state? s2) (dissoc s2 :object) s2)))
          (fail state "bnode nesting fail"))
@@ -517,54 +508,93 @@
          (fail state "list nesting fail"))
     \. (-> state
            (emit-curr-triple)
-           (assoc :state parse-token-doc))
+           (dissoc :subject :predicate :object :literal)
+           (assoc :state parse-doc))
     \, (-> state
            (emit-curr-triple)
            (dissoc :object :literal)
-           (assoc :state parse-token-object :comment-ok? false))
+           (assoc :state parse-object :comment-ok? false))
     \; (-> state
            (emit-curr-triple)
            (dissoc :predicate :object :literal)
-           (assoc :state parse-token-predicate :triple-ctx :predicate :comment-ok? true))
+           (assoc :state parse-predicate :triple-ctx :predicate :comment-ok? true))
     (fail state "non-terminated triple")))
 
 (def spo-transitions
-  {:subject parse-token-predicate
-   :predicate parse-token-object
-   :object parse-token-end-triple?})
+  {:subject parse-predicate
+   :predicate parse-object
+   :object parse-end-triple})
 
 (def doc-transitions
-  {\@ parse-token-prefix
-   \# parse-token-comment
-   \< parse-token-iri-ref
-   \_ parse-token-bnode
-   \[ parse-token-bnode-proplist
-   \( parse-token-list
-   \uffff parse-token-eof})
+  {\@ parse-prefix
+   \# parse-comment
+   \< parse-iri-ref
+   \_ parse-bnode
+   \[ parse-bnode-proplist
+   \( parse-list
+   \uffff parse-eof})
 
 (def obj-transitions
-  {\< parse-token-iri-ref
-   \" parse-token-literal
-   \' parse-token-literal
-   \[ parse-token-bnode-proplist
-   \_ parse-token-bnode
-   \( parse-token-list})
+  {\< parse-iri-ref
+   \" parse-literal
+   \' parse-literal
+   \[ parse-bnode-proplist
+   \_ parse-bnode
+   \( parse-list})
+
+(defn init-reader
+  [in] (PushbackReader. (io/reader in)))
 
 (defn init-parser-state
-  [& {:keys [prefixes]}]
-  {:state parse-token-doc :prefixes (or prefixes default-namespaces) :blanks {}})
+  [& {:keys [prefixes base on-prefix on-base on-triple on-complete on-error meta?]}]
+  {:state parse-doc
+   :prefixes (or prefixes default-namespaces)
+   :blanks {}
+   :base-iri base
+   :handlers {:on-prefix on-prefix
+              :on-base on-base
+              :on-triple on-triple
+              :on-complete on-complete
+              :on-error on-error}
+   :meta? meta?})
 
 (defn parse-triples
   ([in]
-     (parse-triples
-      (PushbackReader. (io/reader in))
-      (init-parser-state)))
+     (parse-triples (init-reader in) (init-parser-state)))
   ([^PushbackReader in state]
-     ;; (prn (:state state) :err (:error state))
      (if-let [t (first (:triples state))]
        (lazy-seq
         (cons t (parse-triples in (assoc state :triples (rest (:triples state))))))
        (cond
         (:error state) [state]
         (:eof state) nil
+        :default (recur in ((:state state) in state))))))
+
+(defn parse-triples-with-meta
+  ([in]
+     (parse-triples-with-meta (init-reader in) (init-parser-state)))
+  ([^PushbackReader in state]
+     (if-let [t (first (:triples state))]
+       (lazy-seq
+        (cons
+         (with-meta t {:prefixes (:prefixes state) :base (:base-iri state)})
+         (parse-triples-with-meta in (assoc state :triples (rest (:triples state))))))
+       (cond
+        (:error state) [state]
+        (:eof state) nil
+        :default (recur in ((:state state) in state))))))
+
+(defn parse-triples-with-handlers
+  ([in]
+     (parse-triples-with-handlers (init-reader in) (init-parser-state)))
+  ([^PushbackReader in state]
+     (if-let [t (first (:triples state))]
+       (let [t (if-let [h (get-in state [:handlers :on-triple])] (h t) t)
+             state (assoc state :triples (rest (:triples state)))]
+         (if t
+           (lazy-seq (cons t (parse-triples-with-handlers in state)))
+           (recur in state)))
+       (cond
+        (:error state) (if-let [h (get-in state [:handlers :on-error])] (h state) [state])
+        (:eof state) (when-let [h (get-in state [:handlers :on-complete])] (h state))
         :default (recur in ((:state state) in state))))))
