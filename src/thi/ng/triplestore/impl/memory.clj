@@ -168,10 +168,12 @@
     (models id)))
 
 (defn make-store
-  [& {:as ns}] (MemStore. (merge ns/default-namespaces ns) {} {} {} {}))
+  ([] (make-store {}))
+  ([prefixes] (MemStore. (merge ns/default-namespaces prefixes) {} {} {} {})))
 
 (defn make-dataset
-  [& ns] (MemDataset. {:default (apply make-store ns)}))
+  ([] (make-dataset {}))
+  ([prefixes] (MemDataset. {:default (make-store prefixes)})))
 
 (defn select-from
   [[s p o] triples]
