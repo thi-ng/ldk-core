@@ -46,12 +46,19 @@
 
 (def uchar (str "(?:\\\\u([a-f0-9]{4}))|(?:\\\\u([a-f0-9]{8}))"))
 
+(def echar (str "(?:\\\\[tbnrf\"'\\\\])"))
+
 (def re-patterns
   {:iri-ref #"<((?:[^\x00-\x20<>\"\{\}\|\^\`]|\\[uU])*)>"
    :bnode (re-pattern (str "[" pn-chars-base "_0-9]([" pn-chars "\\.]*[" pn-chars "])?"))
    :escape #"\\u([a-fA-F0-9]{4})|\\U([a-fA-F0-9]{8})|\\[uU]|\\(.)"
    :pname (re-pattern (str pname-ln "|" pname-ns))
-   :pname-ns (re-pattern pname-ns)})
+   :pname-ns (re-pattern pname-ns)
+   :lit-chars-double (re-pattern (str "((?:[^\"\\\\\\u000a\\u000d])|" uchar "|" echar ")*"))
+   :lit-chars-single (re-pattern (str "((?:[^'\\\\\\u000a\\u000d])|" uchar "|" echar ")*"))
+   :lit-chars-long-dbl (re-pattern (str "((?:[^\"\\\\])|" uchar "|" echar ")*"))
+   :lit-chars-long-sgl (re-pattern (str "((?:[^'\\\\])|" uchar "|" echar ")*"))
+   })
 
 (def esc-replacements
   {"\\" \\ "'" \' "\"" \"
@@ -88,7 +95,7 @@
 
 (defn trace
   [id state]
-  (prn id)
+  ;; (prn id)
   (pprint
    (map
     (fn [[k v]] [k (if (or (keyword? v) (sequential? v)) v (api/index-value v))])
@@ -101,10 +108,14 @@
 (defn emit-curr-triple
   ([{:keys [subject predicate object triples] :as state}]
      ;; (prn :triple [subject predicate object])
-     (assoc state :triples (conj triples [subject predicate object])))
+     (assoc state
+       :triples (conj triples [subject predicate object])
+       :triple-complete? true))
   ([state {:keys [subject predicate object]}]
      ;; (prn :triple [subject predicate object])
-     (assoc state :triples (conj (:triples state) [subject predicate object]))))
+     (assoc state
+       :triples (conj (:triples state) [subject predicate object])
+       :triple-complete? true)))
 
 (defn emit-triples
   [state triple-coll]
@@ -123,6 +134,7 @@
 (defn push-context
   [state nest-type]
   ;; (trace :push state)
+  ;; (prn :push)
   (-> state
       (assoc :stack (conj (get state :stack []) (dissoc state :stack)))
       (assoc :nest-type nest-type)))
@@ -131,6 +143,7 @@
   [state]
   (when-let [s2 (clojure.core/peek (:stack state))]
     ;; (trace :pop state)
+    ;; (prn :pop)
     (assoc s2
       :stack (pop (:stack state))
       :blanks (merge (:blanks s2) (:blanks state)))))
@@ -180,6 +193,10 @@
 
 (defn next-char? [^PushbackReader in x] (= (char x) (char (.read in))))
 
+(defn remove-comment
+  [s]
+  (let [idx (.indexOf s "#")] (if (>= idx 0) (subs s 0 idx) s)))
+
 (defn read-while
   ([^PushbackReader in f unread-last?] (read-while in f unread-last? (StringBuilder.)))
   ([^PushbackReader in f unread-last? ^StringBuilder buf]
@@ -191,7 +208,10 @@
            (.toString buf))))))
 
 (defn read-until-ws
-  [^PushbackReader in] (read-while in #(not (Character/isWhitespace (int %))) false))
+  [^PushbackReader in] (read-while in #(not (Character/isWhitespace (int %))) true))
+
+(defn read-until-linebreak
+  [^PushbackReader in] (read-while in #(not (#{0x0a 0x0d} %)) false))
 
 (defn read-until-literal
   [^PushbackReader in lit]
@@ -221,12 +241,21 @@
       [iri state src]
       [nil (fail state (str "invalid IRI-REF: " src)) src])))
 
+(defn pname-without-comment
+  [^PushbackReader in pname]
+  (read-until-linebreak in)
+  (unescape (subs pname 0 (.indexOf pname "#"))))
+
 (defn read-pname
   ([^PushbackReader in state] (read-pname in state nil))
   ([^PushbackReader in state prepend]
      (let [src (str prepend (read-until-ws in))
            [pname] (re-matches (:pname re-patterns) src)
-           pname (ns/resolve-pname (:prefixes state) (unescape pname))]
+           pname (ns/resolve-pname (:prefixes state) (unescape pname))
+           pname (if (and (nil? pname) (pos? (.indexOf src "#")))
+                   (ns/resolve-pname (:prefixes state) (pname-without-comment in src))
+                   pname)]
+       ;; (prn :pname pname :src src)
        (if pname
          [(api/make-resource pname) state src]
          [nil (fail state (str "invalid pname: " src)) src]))))
@@ -243,7 +272,9 @@
   (skip-ws in)
   ((get doc-transitions (peek in) parse-pname) in
    (assoc state
-     :triple-ctx :subject :iri-ctx :subject :comment-ok? false :comment-ctx parse-doc)))
+     :triple-ctx :subject :iri-ctx :subject
+     :triple-complete? false
+     :comment-ok? false :comment-ctx parse-doc)))
 
 (defn parse-prefix
   [^PushbackReader in state]
@@ -292,6 +323,7 @@
 
 (defn parse-comment
   [^PushbackReader in state]
+  ;; (prn :comment :ctx (:comment-ctx state))
   (let [c (read-while in #(not (#{0x000a 0x000d} %)) false)]
     ((:comment-ctx state) in state)))
 
@@ -311,7 +343,7 @@
                         (transition)
                         (assoc ctx (get-in state [:blanks id])))]
           ((:state state) in state))
-        (fail state (str "illegal bnode label" token))))
+        (fail state (str "illegal bnode label: " token))))
     (fail state "illegal bnode label")))
 
 (defn parse-bnode-proplist
@@ -343,7 +375,10 @@
   (skip-ws in)
   (let [c (peek in)]
     (cond
-     (= c \<) (parse-iri-ref in (assoc state :iri-ctx :predicate))
+     (= c \.) (if (:triple-complete? state)
+                (do (.read in) (parse-doc in state))
+                (fail "illegal statement terminator at predicate position"))
+     (= c \<) (parse-iri-ref in (assoc state :iri-ctx :predicate :triple-ctx :predicate))
      (and (= c \#) (:comment-ok? state)) (parse-comment in (assoc state :comment-ctx parse-predicate))
      :default
      (let [c (char (.read in))]
@@ -380,11 +415,11 @@
 
 (defn parse-object
   [^PushbackReader in state]
-  ;; (prn :object)
+  ;; (prn :object (list-state? state) (:object state))
   (skip-ws in)
   (let [state (if (list-state? state)
                 (if-let [obj (:object state)]
-                  (update-in state [:coll-items] conj obj)
+                  (-> state (update-in [:coll-items] conj obj) (dissoc :object))
                   state)
                 state)
         c (peek in)]
@@ -394,7 +429,7 @@
         (parse-end-triple in state)
         (fail state "list nesting fail"))
       ((get obj-transitions c parse-pname)
-       in (assoc state :triple-ctx :object :iri-ctx :object)))))
+       in (assoc state :triple-ctx :object :iri-ctx :object :comment-ctx parse-object)))))
 
 (defn parse-list
   [^PushbackReader in {ctx :triple-ctx :as state}]
@@ -405,9 +440,12 @@
         state (-> state (transition) (assoc ctx node))]
     ;; (trace :list state)
     (if (= \) (peek in))
-      (do (.read in) (emit-triples state (api/rdf-list-triples node [])))
-      (let [s2 (push-context state :list)]
-        (parse-object in (assoc s2 :object nil :subject node :coll-items []))))))
+      (do (.read in)
+          (emit-triples state (api/rdf-list-triples node [])))
+      (parse-object
+       in (-> state
+              (push-context :list)
+              (assoc :object nil :subject node :coll-items []))))))
 
 (defn parse-literal
   [^PushbackReader in state]
@@ -415,7 +453,7 @@
   (let [c (char (.read in))
         n (char (.read in))
         p (peek in)
-        trans (fn [q]
+        trans (fn [q re]
                 (if (= n (char q))
                   (cond
                    (= p q) (parse-long-string in (assoc state :lit-terminator (str q q q)))
@@ -425,27 +463,26 @@
                              in (assoc state
                                   :triple-ctx :object
                                   :object (api/make-literal ""))))
-                  (parse-literal-content in (assoc state :literal n :lit-terminator q))))]
+                  (parse-literal-content in (assoc state :literal n :lit-terminator q :lit-regex re))))]
     (cond
-     (= c \") (trans \")
-     (= c \') (trans \')
+     (= c \") (trans \" :lit-chars-double)
+     (= c \') (trans \' :lit-chars-single)
      :default (fail state (str "illegal literal: " c n p)))))
 
 (defn parse-literal-content
   [^PushbackReader in state]
   ;; (prn :lit-content)
-  (let [terminators #{(int (:lit-terminator state)) 0x000a 0x000d}
-        lit (str (:literal state) (read-while in #(not (terminators %)) true))
-        c (char (.read in))
+  (let [src (str (:literal state) (read-until-literal in (str (:lit-terminator state))))
+        [lit] (re-matches ((:lit-regex state) re-patterns) src)
+        lit (unescape lit)
         n (peek in)]
-    (if (= c (char (:lit-terminator state)))
-      ;; TODO add regexp check
+    (if lit
       (condp = n
         \@ (parse-lang-tag in (assoc state :literal lit))
         \^ (parse-literal-type in (assoc state :literal lit))
         (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
           ((:state state) in state)))
-      (fail state "unexpected line break in literal")))) ;; TODO add xsd:string type
+      (fail state (str "illegal escape seq in literal: " src))))) ;; TODO add xsd:string type
 
 (defn parse-long-string
   [^PushbackReader in state]
@@ -540,7 +577,8 @@
    \' parse-literal
    \[ parse-bnode-proplist
    \_ parse-bnode
-   \( parse-list})
+   \( parse-list
+   \# parse-comment})
 
 (defn init-reader
   [in] (PushbackReader. (io/reader in)))
