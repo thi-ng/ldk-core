@@ -2,23 +2,72 @@
   (:require
    [thi.ng.triplestore
     [api :as api]
-    [query :as q]]
+    [namespaces :as ns]
+    [query :as q]
+    [util :as u]]
    [clojure
     [set :as set]]))
 
 ;; FIXME declare rdf props in api/RDF etc.
 (def rules
-  [[:sub-property '[[?a "rdfs:subPropertyOf" ?b] [?x ?a ?y]] [['?x '?b '?y]]]
-   [:sym-property '[[?a ?r ?b] [?r "rdf:type" "owl:SymmetricProperty"]] [['?b '?r '?a]]]
-   [:inv-property-setup '[[?r "owl:inverseOf" ?i]] [['?i "owl:inverseOf" '?r]]]
-   [:inv-property '[[?r "owl:inverseOf" ?i] [?a ?r ?b]] [['?b '?i '?a]]]
+  [[:sub-property
+    [['?a (:sub-property ns/RDFS) '?b] ['?x '?a '?y]]
+    [['?x '?b '?y]]]
+   [:sym-property
+    '[[?a ?r ?b] [?r (:type ns/RDF) (:sym-property ns/OWL)]]
+    [['?b '?r '?a]]]
+   [:inv-property-setup
+    [['?r (:inverse-of ns/OWL) '?i]]
+    [['?i (:inverse-of ns/OWL) '?r]]]
+   [:inv-property
+    [['?r (:inverse-of ns/OWL) '?i] ['?a '?r '?b]]
+    [['?b '?i '?a]]]
    ;; FIXME range & domain rules only correct if ?a owl:ObjectProperty
-   [:range '[[?a "rdfs:range" ?r] [?x ?a ?y]] '[[?y "rdf:type" ?r] [?r "rdf:type" "owl:Class"]]]
-   [:domain '[[?a "rdfs:domain" ?d] [?x ?a ?y]] '[[?x "rdf:type" ?d] [?d "rdf:type" "owl:Class"]]]
-   [:sub-class '[[?a "rdfs:subClassOf" ?b] [?x "rdf:type" ?a]] '[[?x "rdf:type" ?b] [?a "rdf:type" "owl:Class"]]]
-   [:owl-thing '[[?a "rdf:type" "owl:Class"]] '[[?a "rdfs:subClassOf" "owl:Thing"]]]
-   [:trans-property '[[?a "rdf:type" "owl:TransitiveProperty"] [?x ?a ?y] [?y ?a ?z]] '[[?x ?a ?z]]]
-   ])
+   [:range
+    [['?a (:range ns/RDFS) '?r] ['?x '?a '?y]]
+    [['?y (:type ns/RDF) '?r] ['?r (:type ns/RDF) (:class ns/OWL)]]]
+   [:domain
+    [['?a (:domain ns/RDFS) '?d] ['?x '?a '?y]]
+    [['?x (:type ns/RDF) '?d] ['?d (:type ns/RDF) (:class ns/OWL)]]]
+   [:sub-class
+    [['?a (:sub-class ns/RDFS) '?b] ['?x (:type ns/RDF) '?a]]
+    [['?x (:type ns/RDF) '?b] ['?a (:type ns/RDF) (:class ns/OWL)]]]
+   [:owl-thing
+    [['?a (:type ns/RDF) (:class ns/OWL)]]
+    [['?a (:sub-class ns/RDFS) (:thing ns/OWL)]]]
+   [:trans-property
+    [['?a (:type ns/RDF) (:trans-property ns/OWL)] ['?x '?a '?y] ['?y '?a '?z]]
+    [['?x '?a '?z]]]])
+
+(defn spo-pattern
+  [ds id]
+  (let [{:syms [?s ?p ?o]}
+        (first (q/select-join-from
+                ds [[id (:subject ns/INF) '?s]
+                    [id (:predicate ns/INF) '?p]
+                    [id (:object ns/INF) '?o]]))
+        var? #(if (.startsWith (api/label %) "?") (symbol (api/label %)) %)]
+    [(var? ?s) (var? ?p) (var? ?o)]))
+
+(defn map-rdf-list [ds f id] (map f (api/rdf-list-seq ds id)))
+
+(defn init-rule
+  [ds {:syms [?name ?match ?res]}]
+  (let [spo-fn (partial spo-pattern ds)
+        match (map-rdf-list ds spo-fn ?match)
+        res (map-rdf-list ds spo-fn ?res)]
+    [(api/label ?name) match res]))
+
+(defn init-rules-from-model
+  [ds id]
+  (when-let [root ((first (api/select ds id (:rules ns/INF) nil)) 2)]
+    (let [r-query [['?rule (:name ns/INF) '?name]
+                   ['?rule (:match ns/INF) '?match]
+                   ['?rule (:result ns/INF) '?res]]]
+      (->> root
+           (map-rdf-list ds api/label)
+           (map #(first (q/select-join-from ds r-query {'?rule %} nil)))
+           (map (partial init-rule ds))))))
 
 (defn infer
   [ds rule targets]

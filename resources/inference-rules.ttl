@@ -1,0 +1,36 @@
+@base         <http://owl.thi.ng/inference-rules> .
+@prefix :     <http://owl.thi.ng/inference#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<> a :RuleSet ;
+   rdfs:comment """Default thi.ng inference rules""" ;
+   :rules (
+
+     [ :name "sub-property" ;
+       :match  ( [ :subject "?a" ; :predicate rdfs:subPropertyOf ; :object "?b" ]
+                 [ :subject "?x" ; :predicate "?a" ; :object "?y" ] ) ;
+       :result ( [ :subject "?x" ; :predicate "?b" ; :object "?y" ] ) ]
+
+     [ :name "symmetric-property" ;
+       :match  ( [ :subject "?a" ; :predicate "?r" ; :object "?b" ] ) ;
+       :result ( [ :subject "?b" ; :predicate "?r" ; :object "?a" ] ) ]
+
+     [ :name "inv-property-setup" ;
+       :match  ( [ :subject "?r" ; :predicate owl:inverseOf ; :object "?i" ] ) ;
+       :result ( [ :subject "?i" ; :predicate owl:inverseOf ; :object "?r" ] ) ]
+
+     [ :name "inv-property" ;
+       :match  ( [ :subject "?r" ; :predicate owl:inverseOf ; :object "?i" ]
+                 [ :subject "?a" ; :predicate "?r" ; :object "?b" ] ) ;
+       :result ( [ :subject "?b" ; :predicate "?i" ; :object "?a" ] ) ]
+
+     [ :name "range" ;
+       :match  ( [ :subject "?p" ; :predicate rdfs:range ; :object "?r" ]
+                 [ :subject "?x" ; :predicate "?p" ; :object "?y" ] ) ;
+       :result ( [ :subject "?y" ; :predicate rdf:type ; :object "?r" ]
+                 [ :subject "?r" ; :predicate rdf:type ; :object owl:Class ] ) ]
+
+   ) .
