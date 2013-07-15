@@ -33,6 +33,12 @@
                 :default acc))]
     (reduce walk [] root)))
 
+(defn unwrap [s] (subs s 1 (dec (count s))))
+
+(defn wrap [a b s] (str a s b))
+
+(defn wrap-iri #(str \< % \>))
+
 (defn interval-set
   [& ivals]
   (->> ivals
