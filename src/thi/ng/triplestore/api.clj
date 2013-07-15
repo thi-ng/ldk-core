@@ -123,8 +123,8 @@
 (defn rdf-list-triples
   ([coll] (rdf-list-triples (make-blank-node) coll))
   ([node coll]
-     (loop [triples [] n node [i & more] coll]
-       (let [stm [[n (:type RDF) (:list RDF)] [n (:first RDF) (or i (:nil RDF))]]]
+     (loop [triples [[node (:type RDF) (:list RDF)]] n node [i & more] coll]
+       (let [stm [[n (:first RDF) (or i (:nil RDF))]]]
          (if (seq more)
            (let [nxt (make-blank-node)]
              (recur
@@ -176,3 +176,11 @@
                          [store []] triples)
            store (add-bag store node coll)]
        (apply add-many store (map #(cons node %) extra)))))
+
+(defn rdf-list-seq
+  [store node]
+  (lazy-seq
+    (let [triples (select store node nil nil)
+          f (some (fn [[_ p o]] (when (= p (:first RDF)) o)) triples)
+          r (some (fn [[_ p o]] (when (= p (:rest RDF)) o)) triples)]
+      (when f (if r (cons f (rdf-list-seq store r)) [f])))))
