@@ -108,14 +108,18 @@
 (defn emit-curr-triple
   ([{:keys [subject predicate object triples] :as state}]
      ;; (prn :triple [subject predicate object])
-     (assoc state
-       :triples (conj triples [subject predicate object])
-       :triple-complete? true))
+     (if (and subject predicate object)
+       (assoc state
+         :triples (conj triples [subject predicate object])
+         :triple-complete? true)
+       state))
   ([state {:keys [subject predicate object]}]
      ;; (prn :triple [subject predicate object])
-     (assoc state
-       :triples (conj (:triples state) [subject predicate object])
-       :triple-complete? true)))
+     (if (and subject predicate object)
+       (assoc state
+         :triples (conj (:triples state) [subject predicate object])
+         :triple-complete? true)
+       state)))
 
 (defn emit-triples
   [state triple-coll]
@@ -244,17 +248,17 @@
 (defn pname-without-comment
   [^PushbackReader in pname]
   (read-until-linebreak in)
-  (unescape (subs pname 0 (.indexOf pname "#"))))
+  (subs pname 0 (.indexOf pname "#")))
 
 (defn read-pname
   ([^PushbackReader in state] (read-pname in state nil))
   ([^PushbackReader in state prepend]
      (let [src (str prepend (read-until-ws in))
            [pname] (re-matches (:pname re-patterns) src)
-           pname (ns/resolve-pname (:prefixes state) (unescape pname))
            pname (if (and (nil? pname) (pos? (.indexOf src "#")))
-                   (ns/resolve-pname (:prefixes state) (pname-without-comment in src))
-                   pname)]
+                   (pname-without-comment in src)
+                   pname)
+           pname (ns/resolve-pname (:prefixes state) (unescape pname))]
        ;; (prn :pname pname :src src)
        (if pname
          [(api/make-resource pname) state src]
@@ -379,6 +383,7 @@
                 (do (.read in) (parse-doc in state))
                 (fail "illegal statement terminator at predicate position"))
      (= c \<) (parse-iri-ref in (assoc state :iri-ctx :predicate :triple-ctx :predicate))
+     (= c \]) (parse-end-triple in state)
      (and (= c \#) (:comment-ok? state)) (parse-comment in (assoc state :comment-ctx parse-predicate))
      :default
      (let [c (char (.read in))]
