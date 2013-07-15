@@ -198,7 +198,7 @@
 (defn next-char? [^PushbackReader in x] (= (char x) (char (.read in))))
 
 (defn remove-comment
-  [s]
+  [^String s]
   (let [idx (.indexOf s "#")] (if (>= idx 0) (subs s 0 idx) s)))
 
 (defn read-while
@@ -215,7 +215,7 @@
   [^PushbackReader in] (read-while in #(not (Character/isWhitespace (int %))) true))
 
 (defn read-until-linebreak
-  [^PushbackReader in] (read-while in #(not (#{0x0a 0x0d} %)) false))
+  [^PushbackReader in] (read-while in #(not (or (= 0x0a %) (= 0x0d %))) false))
 
 (defn read-until-literal
   [^PushbackReader in lit]
@@ -246,7 +246,7 @@
       [nil (fail state (str "invalid IRI-REF: " src)) src])))
 
 (defn pname-without-comment
-  [^PushbackReader in pname]
+  [^PushbackReader in ^String pname]
   (read-until-linebreak in)
   (subs pname 0 (.indexOf pname "#")))
 
