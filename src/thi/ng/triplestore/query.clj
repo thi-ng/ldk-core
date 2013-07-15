@@ -2,6 +2,7 @@
   (:require
    [thi.ng.triplestore
     [api :as api]
+    [namespaces :as ns]
     [util :as util]]
    [clojure
     [set :as set]
@@ -139,7 +140,27 @@
          (conj q [ds (cons patt patterns) r-binds])))
      q queries)))
 
-(defn select-join*
+(defn resolve-item
+  [prefixes base x]
+  (cond
+   (symbol? x) x
+   (string? x) (condp = (first x)
+                 \" (subs x 1 (dec (count x)))
+                 \' (subs x 1 (dec (count x)))
+                 \< (ns/resolve-iri base (subs x 1 (dec (count x))))
+                 (ns/resolve-pname prefixes x))
+   :default x))
+
+(defn resolve-patterns
+  [prefixes base patterns]
+  (map
+   (fn [[s p o]]
+     [(resolve-item prefixes base s)
+      (if (= "a" p) (:type ns/RDF) (resolve-item prefixes base p))
+      (resolve-item prefixes base o)])
+   patterns))
+
+(defn- select-join*
   [q [r & more] flt]
   (if r
     (lazy-seq (cons r (select-join* q more flt)))

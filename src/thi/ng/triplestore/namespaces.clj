@@ -8,6 +8,9 @@
    "xsd" "http://www.w3.org/2001/XMLSchema#"
    })
 
+(defn resolve-iri
+  [^String base ^String iri] (if (neg? (.indexOf iri ":")) (str base iri) iri))
+
 (defn resolve-pname
   [prefixes ^String pname]
   (when pname
