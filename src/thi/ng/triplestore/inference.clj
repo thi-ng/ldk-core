@@ -14,7 +14,7 @@
     [['?a (:sub-property ns/RDFS) '?b] ['?x '?a '?y]]
     [['?x '?b '?y]]]
    [:sym-property
-    '[[?a ?r ?b] [?r (:type ns/RDF) (:sym-property ns/OWL)]]
+    [['?a '?r '?b] ['?r (:type ns/RDF) (:sym-property ns/OWL)]]
     [['?b '?r '?a]]]
    [:inv-property-setup
     [['?r (:inverse-of ns/OWL) '?i]]

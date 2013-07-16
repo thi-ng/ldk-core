@@ -22,7 +22,7 @@
        :match  ( [ :subject "?r" ; :predicate owl:inverseOf ; :object "?i" ] ) ;
        :result ( [ :subject "?i" ; :predicate owl:inverseOf ; :object "?r" ] ) ]
 
-     [ :name "inv-property" ;
+     [ :name "inverse-property" ;
        :match  ( [ :subject "?r" ; :predicate owl:inverseOf ; :object "?i" ]
                  [ :subject "?a" ; :predicate "?r" ; :object "?b" ] ) ;
        :result ( [ :subject "?b" ; :predicate "?i" ; :object "?a" ] ) ]
@@ -32,5 +32,27 @@
                  [ :subject "?x" ; :predicate "?p" ; :object "?y" ] ) ;
        :result ( [ :subject "?y" ; :predicate rdf:type ; :object "?r" ]
                  [ :subject "?r" ; :predicate rdf:type ; :object owl:Class ] ) ]
+
+     [ :name "domain" ;
+       :match  ( [ :subject "?p" ; :predicate rdfs:domain ; :object "?d" ]
+                 [ :subject "?x" ; :predicate "?p" ; :object "?y" ] ) ;
+       :result ( [ :subject "?x" ; :predicate rdf:type ; :object "?d" ]
+                 [ :subject "?d" ; :predicate rdf:type ; :object owl:Class ] ) ]
+
+     [ :name "sub-class" ;
+       :match  ( [ :subject "?a" ; :predicate rdfs:subClassOf ; :object "?b" ]
+                 [ :subject "?x" ; :predicate rdf:type ; :object "?a" ] ) ;
+       :result ( [ :subject "?x" ; :predicate rdf:type ; :object "?b" ]
+                 [ :subject "?a" ; :predicate rdf:type ; :object owl:Class ] ) ]
+
+     [ :name "owl-thing" ;
+       :match  ( [ :subject "?x" ; :predicate rdf:type ; :object owl:Class ] ) ;
+       :result ( [ :subject "?x" ; :predicate rdf:type ; :object owl:Thing ] ) ]
+
+     [ :name "transitive-property" ;
+       :match  ( [ :subject "?p" ; :predicate rdf:type ; :object owl:TransitiveProperty ]
+                 [ :subject "?x" ; :predicate "?p" ; :object "?y" ]
+                 [ :subject "?y" ; :predicate "?p" ; :object "?z" ] ) ;
+       :result ( [ :subject "?x" ; :predicate "?p" ; :object "?z" ] ) ]
 
    ) .

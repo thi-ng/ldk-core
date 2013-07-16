@@ -37,7 +37,7 @@
 
 (defn wrap [a b s] (str a s b))
 
-(defn wrap-iri #(str \< % \>))
+(def wrap-iri #(str \< % \>))
 
 (defn interval-set
   [& ivals]
