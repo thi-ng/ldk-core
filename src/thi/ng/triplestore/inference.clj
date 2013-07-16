@@ -4,40 +4,12 @@
     [api :as api]
     [namespaces :as ns]
     [query :as q]
+    [ttl :as ttl]
     [util :as u]]
+   [thi.ng.triplestore.impl.memory :as mem]
    [clojure
-    [set :as set]]))
-
-;; FIXME declare rdf props in api/RDF etc.
-(def rules
-  [[:sub-property
-    [['?a (:sub-property ns/RDFS) '?b] ['?x '?a '?y]]
-    [['?x '?b '?y]]]
-   [:sym-property
-    [['?a '?r '?b] ['?r (:type ns/RDF) (:sym-property ns/OWL)]]
-    [['?b '?r '?a]]]
-   [:inv-property-setup
-    [['?r (:inverse-of ns/OWL) '?i]]
-    [['?i (:inverse-of ns/OWL) '?r]]]
-   [:inv-property
-    [['?r (:inverse-of ns/OWL) '?i] ['?a '?r '?b]]
-    [['?b '?i '?a]]]
-   ;; FIXME range & domain rules only correct if ?a owl:ObjectProperty
-   [:range
-    [['?a (:range ns/RDFS) '?r] ['?x '?a '?y]]
-    [['?y (:type ns/RDF) '?r] ['?r (:type ns/RDF) (:class ns/OWL)]]]
-   [:domain
-    [['?a (:domain ns/RDFS) '?d] ['?x '?a '?y]]
-    [['?x (:type ns/RDF) '?d] ['?d (:type ns/RDF) (:class ns/OWL)]]]
-   [:sub-class
-    [['?a (:sub-class ns/RDFS) '?b] ['?x (:type ns/RDF) '?a]]
-    [['?x (:type ns/RDF) '?b] ['?a (:type ns/RDF) (:class ns/OWL)]]]
-   [:owl-thing
-    [['?a (:type ns/RDF) (:class ns/OWL)]]
-    [['?a (:sub-class ns/RDFS) (:thing ns/OWL)]]]
-   [:trans-property
-    [['?a (:type ns/RDF) (:trans-property ns/OWL)] ['?x '?a '?y] ['?y '?a '?z]]
-    [['?x '?a '?z]]]])
+    [set :as set]]
+   [clojure.java.io :as jio]))
 
 (defn spo-pattern
   [ds id]
@@ -46,7 +18,7 @@
                 ds [[id (:subject ns/INF) '?s]
                     [id (:predicate ns/INF) '?p]
                     [id (:object ns/INF) '?o]]))
-        var? #(if (.startsWith (api/label %) "?") (symbol (api/label %)) %)]
+        var? #(if (.startsWith ^String (api/label %) "?") (symbol (api/label %)) %)]
     [(var? ?s) (var? ?p) (var? ?o)]))
 
 (defn map-rdf-list [ds f id] (map f (api/rdf-list-seq ds id)))
@@ -59,15 +31,19 @@
     [(api/label ?name) match res]))
 
 (defn init-rules-from-model
-  [ds id]
-  (when-let [root ((first (api/select ds id (:rules ns/INF) nil)) 2)]
-    (let [r-query [['?rule (:name ns/INF) '?name]
-                   ['?rule (:match ns/INF) '?match]
-                   ['?rule (:result ns/INF) '?res]]]
-      (->> root
-           (map-rdf-list ds api/label)
-           (map #(first (q/select-join-from ds r-query {'?rule %} nil)))
-           (map (partial init-rule ds))))))
+  ([uri]
+     (let [ds (apply api/add-many (mem/make-store) (ttl/parse-triples uri))
+           base (ffirst (api/select ds nil (:type ns/RDF) (:ruleset ns/INF)))]
+       (init-rules-from-model ds base)))
+  ([ds id]
+     (when-let [root ((first (api/select ds id (:rules ns/INF) nil)) 2)]
+       (let [r-query [['?rule (:name ns/INF) '?name]
+                      ['?rule (:match ns/INF) '?match]
+                      ['?rule (:result ns/INF) '?res]]]
+         (->> root
+              (map-rdf-list ds api/label)
+              (map #(first (q/select-join-from ds r-query {'?rule %} nil)))
+              (map (partial init-rule ds)))))))
 
 (defn infer
   [ds rule targets]
@@ -97,7 +73,6 @@
                         (set/difference (infer ds rule targets))
                         (filter
                          #(nil? (seq (apply api/select ds (api/remove-context %))))))]
-       ;; (clojure.pprint/pprint new-inf)
        (if (seq new-inf)
          (recur
           (apply api/add-many ds new-inf)

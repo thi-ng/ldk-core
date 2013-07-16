@@ -10,12 +10,13 @@
    :rules (
 
      [ :name "sub-property" ;
-       :match  ( [ :subject "?a" ; :predicate rdfs:subPropertyOf ; :object "?b" ]
-                 [ :subject "?x" ; :predicate "?a" ; :object "?y" ] ) ;
-       :result ( [ :subject "?x" ; :predicate "?b" ; :object "?y" ] ) ]
+       :match  ( [ :subject "?p" ; :predicate rdfs:subPropertyOf ; :object "?q" ]
+                 [ :subject "?x" ; :predicate "?p" ; :object "?y" ] ) ;
+       :result ( [ :subject "?x" ; :predicate "?q" ; :object "?y" ] ) ]
 
      [ :name "symmetric-property" ;
-       :match  ( [ :subject "?a" ; :predicate "?r" ; :object "?b" ] ) ;
+       :match  ( [ :subject "?r" ; :predicate rdf:type ; :object owl:SymmetricProperty ]
+                 [ :subject "?a" ; :predicate "?r" ; :object "?b" ] ) ;
        :result ( [ :subject "?b" ; :predicate "?r" ; :object "?a" ] ) ]
 
      [ :name "inv-property-setup" ;
