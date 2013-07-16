@@ -1,6 +1,6 @@
 (ns thi.ng.triplestore.impl.redis
   (:require
-   [thi.ng.triplestore.api :as api]
+   [thi.ng.triplestore.api :as api :refer [as-node]]
    [taoensso.carmine :as red]))
 
 (def redis-conn {:pool {} :spec {}})
@@ -43,9 +43,20 @@
            (red/hset "ops" kop (conj ops sh)))
     [sh ph oh]))
 
-(defn triples-sp [conn s p coll] (map (fn [o] [s p o]) (rexec conn (apply red/hmget "obj" coll))))
-(defn triples-po [conn p o coll] (map (fn [s] [s p o]) (rexec conn (apply red/hmget "subj" coll))))
-(defn triples-op [conn o p coll] (map (fn [s] [s p o]) (rexec conn (apply red/hmget "subj" coll))))
+(defn triples-sp
+  [conn s p coll]
+  (let [s (as-node s) p (as-node p)]
+    (map (fn [o] [s p (as-node o)]) (rexec conn (apply red/hmget "obj" coll)))))
+
+(defn triples-po
+  [conn p o coll]
+  (let [p (as-node p) o (as-node o)]
+    (map (fn [s] [(as-node s) p o]) (rexec conn (apply red/hmget "subj" coll)))))
+
+(defn triples-op
+  [conn o p coll]
+  (let [o (as-node o) p (as-node p)]
+    (map (fn [s] [(as-node s) p o]) (rexec conn (apply red/hmget "subj" coll)))))
 
 (defn reduce-triples
   [conn f base-val base-hash inner-idx coll-idx coll]
@@ -69,7 +80,9 @@
             (let [obj (rexec conn (red/hget "spo" (str sh ph)))]
               (if o
                 ;; s p o
-                (when (obj oh) [[s p o]])
+                (when (obj oh)
+                  [(map as-node (rexec conn (red/hget "subj" sh) (red/hget "pred" ph) (red/hget "obj" oh)))])
+                ;; (when (obj oh) [[(as-node s) (as-node p) (as-node o)]])
                 ;; s p nil
                 (triples-sp conn s p obj)))
             ;; s nil o?

@@ -97,6 +97,18 @@
   ([label lang] (NodeLiteral. label lang nil))
   ([label lang type] (NodeLiteral. label lang type)))
 
+(defn as-node
+  [x]
+  (cond
+    (satisfies? PNode x) x
+    (map? x) (cond
+    	       (:uri x)   (map->NodeURI x)
+    	       (:id x)    (map->NodeBlank x)
+               (:label x) (map->NodeLiteral x)
+	       :default nil)
+    (string? x) (make-literal x)
+    :default nil))
+
 (def RDF
   (reduce
    (fn [m k] (assoc m k (make-resource (k n/RDF))))
