@@ -43,8 +43,18 @@
            (red/hset "ops" kop (conj ops sh)))
     [sh ph oh]))
 
-(defn triples-sp* [conn s p coll] (map (fn [o] [s p o]) (rexec conn (apply red/hmget "obj" coll))))
-(defn triples-*po [conn p o coll] (map (fn [s] [s p o]) (rexec conn (apply red/hmget "subj" coll))))
+(defn triples-sp [conn s p coll] (map (fn [o] [s p o]) (rexec conn (apply red/hmget "obj" coll))))
+(defn triples-po [conn p o coll] (map (fn [s] [s p o]) (rexec conn (apply red/hmget "subj" coll))))
+(defn triples-op [conn o p coll] (map (fn [s] [s p o]) (rexec conn (apply red/hmget "subj" coll))))
+
+(defn reduce-triples
+  [conn f base-val base-hash inner-idx coll-idx coll]
+  (let [cmap (zipmap coll (rexec conn (apply red/hmget coll-idx coll)))]
+    (reduce
+     (fn [coll [ch c]]
+       (let [inner (rexec conn (red/hget inner-idx (str base-hash ch)))]
+         (into coll (f conn base-val c inner))))
+     [] cmap)))
 
 (defrecord RedisStore [conn]
   api/PModel
@@ -54,55 +64,40 @@
   (select [this s p o]
     (let [[sh ph oh] (map *hashimpl* [s p o])]
       (if s
-        (when-let [preds (rexec conn (red/hget "sp" sh))]
+        (when (pos? (rexec conn (red/hexists "sp" sh)))
           (if p
             (let [obj (rexec conn (red/hget "spo" (str sh ph)))]
               (if o
                 ;; s p o
                 (when (obj oh) [[s p o]])
                 ;; s p nil
-                (triples-sp* conn s p obj)))
+                (triples-sp conn s p obj)))
             ;; s nil o?
-            (let [pmap (zipmap preds (rexec conn (apply red/hmget "pred" preds)))]
+            (let [preds (rexec conn (red/hget "sp" sh))
+                  pmap (zipmap preds (rexec conn (apply red/hmget "pred" preds)))]
               (reduce
                (fn [coll [ph p]]
                  (let [obj (rexec conn (red/hget "spo" (str sh ph)))]
                    (if o
                      (if (some #(= oh %) obj) (conj coll [s p o]) coll)
-                     (into coll (triples-sp* conn s p obj)))))
+                     (into coll (triples-sp conn s p obj)))))
                [] pmap))))
         (if p
-          (when-let [obj (rexec conn (red/hget "po" ph))]
+          (when (pos? (rexec conn (red/hexists "po" ph)))
             (if o
               ;; nil p o
               (when-let [subj (rexec conn (red/hget "pos" (str ph oh)))]
-                (triples-*po conn p o subj))
+                (triples-po conn p o subj))
               ;; nil p nil
-              (let [omap (zipmap obj (rexec conn (apply red/hmget "obj" obj)))]
-                (reduce
-                 (fn [coll [oh o]]
-                   (let [subj (rexec conn (red/hget "pos" (str ph oh)))]
-                     (into coll (triples-*po conn p o subj))))
-                 [] omap))))
+              (reduce-triples conn triples-po p ph "pos" "obj" (rexec conn (red/hget "po" ph)))))
           (if o
             (when-let [preds (rexec conn (red/hget "op" oh))]
               ;; nil nil o
-              (let [pmap (zipmap preds (rexec conn (apply red/hmget "pred" preds)))]
-                (reduce
-                 (fn [coll [ph p]]
-                   (let [subj (rexec conn (red/hget "ops" (str oh ph)))]
-                     (into coll (triples-*po conn p o subj))))
-                 [] pmap)))
+              (reduce-triples conn triples-op o oh "ops" "pred" preds))
             ;; nil nil nil
             (mapcat
              (fn [[sh s]]
-               (let [preds (rexec conn (red/hget "sp" sh))
-                     pmap (zipmap preds (rexec conn (apply red/hmget "pred" preds)))]
-                 (reduce
-                  (fn [coll [ph p]]
-                    (let [obj (rexec conn (red/hget "spo" (str sh ph)))]
-                      (into coll (triples-sp* conn s p obj))))
-                  [] pmap)))
+               (reduce-triples conn triples-sp s sh "spo" "pred" (rexec conn (red/hget "sp" sh))))
              (partition 2 (rexec conn (red/hgetall "subj"))))))))))
 
 (defn make-store
