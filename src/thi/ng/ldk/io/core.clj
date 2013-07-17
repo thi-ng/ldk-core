@@ -1,6 +1,6 @@
-(ns thi.ng.triplestore.io
+(ns thi.ng.ldk.io.core
   (:require
-   [thi.ng.triplestore
+   [thi.ng.ldk.core
     [api :as api]]
    [clojure.string :as str]))
 

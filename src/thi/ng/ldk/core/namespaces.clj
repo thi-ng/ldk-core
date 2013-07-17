@@ -1,4 +1,4 @@
-(ns thi.ng.triplestore.namespaces)
+(ns thi.ng.ldk.core.namespaces)
 
 (def default-namespaces
   {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"

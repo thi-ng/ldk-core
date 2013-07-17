@@ -1,13 +1,14 @@
-(ns thi.ng.triplestore.ttl
+(ns thi.ng.ldk.io.turtle
   (:refer-clojure :exclude [peek])
   (:require
-   [thi.ng.triplestore
+   [thi.ng.ldk.core
     [api :as api]
-    [namespaces :as ns :refer [default-namespaces]]
-    [util :as util]]
-   [clojure.string :as str]
-   [clojure.java.io :as io]
-   [clojure.pprint :refer [pprint]])
+    [namespaces :as ns :refer [default-namespaces]]]
+   [thi.ng.ldk.common.util :as util]
+   [clojure
+    [string :as str]
+    [pprint :refer [pprint]]]
+   [clojure.java.io :as io])
   (:import
    [java.io PushbackReader]
    [java.util.regex Pattern MatchResult]))

@@ -1,12 +1,12 @@
-(ns thi.ng.triplestore.inference
+(ns thi.ng.ldk.inference.core
   (:require
-   [thi.ng.triplestore
+   [thi.ng.ldk.core
     [api :as api]
-    [namespaces :as ns]
-    [query :as q]
-    [ttl :as ttl]
-    [util :as u]]
-   [thi.ng.triplestore.impl.memory :as mem]
+    [namespaces :as ns]]
+   [thi.ng.ldk.query.core :as q]
+   [thi.ng.ldk.io.turtle :as ttl]
+   [thi.ng.ldk.common.util :as u]
+   [thi.ng.ldk.store.memory :as mem]
    [clojure
     [set :as set]]
    [clojure.java.io :as jio]))

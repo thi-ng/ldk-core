@@ -1,9 +1,9 @@
-(ns thi.ng.triplestore.query
+(ns thi.ng.ldk.query.core
   (:require
-   [thi.ng.triplestore
+   [thi.ng.ldk.core
     [api :as api]
-    [namespaces :as ns]
-    [util :as util]]
+    [namespaces :as ns]]
+   [thi.ng.ldk.common.util :as util]
    [clojure
     [set :as set]
     [pprint :refer [pprint]]]))

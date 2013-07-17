@@ -1,9 +1,9 @@
-(ns thi.ng.triplestore.impl.memory
+(ns thi.ng.ldk.store.memory
   (:require
-   [thi.ng.triplestore
+   [thi.ng.ldk.core
     [api :as api]
-    [util :as util]
-    [namespaces :as ns]]))
+    [namespaces :as ns]]
+   [thi.ng.ldk.common.util :as util]))
 
 (def ^:dynamic *hashimpl* (comp hash api/index-value))
 

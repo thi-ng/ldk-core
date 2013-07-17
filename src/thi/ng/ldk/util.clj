@@ -1,4 +1,4 @@
-(ns thi.ng.triplestore.util)
+(ns thi.ng.ldk.common.util)
 
 (defn eset [e e2] (if (set? e) (conj e e2) #{e2}))
 

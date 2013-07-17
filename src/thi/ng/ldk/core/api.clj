@@ -1,6 +1,6 @@
-(ns thi.ng.triplestore.api
+(ns thi.ng.ldk.core.api
   (:require
-   [thi.ng.triplestore.namespaces :as n]))
+   [thi.ng.ldk.core.namespaces :as n]))
 
 (defprotocol PModel
   (add-statement [this s p o] [this g s p o])

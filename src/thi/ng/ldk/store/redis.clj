@@ -1,6 +1,6 @@
-(ns thi.ng.triplestore.impl.redis
+(ns thi.ng.ldk.store.redis
   (:require
-   [thi.ng.triplestore.api :as api :refer [as-node]]
+   [thi.ng.ldk.core.api :as api :refer [as-node]]
    [taoensso.carmine :as red]
    [clojure.pprint :refer [pprint]]))
 
@@ -25,7 +25,7 @@
 
 (defn clear-store
   [conn]
-  (rexec conn (red/del "subj" "pred" "obj" "spo" "pos" "ops" "sp" "po" "op")))
+  (rexec conn (red/flushdb)))
 
 (defn add*
   [conn s p o]
