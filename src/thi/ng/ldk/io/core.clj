@@ -76,7 +76,9 @@
                             (filter #(when-not (string? %) (api/blank? %)))
                             (set))
                        (range))]
-    (->> (mapcat (fn [[k v]] (triples->dot blanks (models k) (api/select ds k nil nil nil))) (:models ds))
+    (->> (if (satisfies? api/PDataset ds)
+           (mapcat (fn [k] (triples->dot blanks (models k) (api/select ds k nil nil nil))) (keys (:models ds)))
+           (triples->dot blanks (models :default) (api/select ds)))
          (sort)
          (apply str)
          (format "digraph g {\n\nnode[%s];\nedge[%s];\n\n%s}"
