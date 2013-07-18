@@ -73,8 +73,15 @@
   (subjects [this] (map idx (keys spo)))
   (predicates [this] (map idx (keys pos)))
   (objects [this] (map idx (keys ops)))
+  (add-prefix [this prefix uri]
+    (assoc-in this [:ns prefix] uri))
+  (add-prefix [this prefix-map]
+    (update-in this [:ns] merge prefix-map))
   (prefix-map [this] ns)
-  (select [this s p o]
+  (select [this]
+    (api/select this nil nil nil))
+  (select
+    [this s p o]
     (let [[sh ph oh] (map *hashimpl* [s p o])]
       (if s
         (if p

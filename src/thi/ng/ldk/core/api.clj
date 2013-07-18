@@ -5,7 +5,7 @@
 (defprotocol PModel
   (add-statement [this s p o] [this g s p o])
   (remove-statement [this s p o] [this g s p o])
-  (select [this s p o] [this g s p o])
+  (select [this] [this s p o] [this g s p o])
   (subjects [this])
   (predicates [this])
   (objects [this])
@@ -13,6 +13,7 @@
   (predicate? [this x])
   (object? [this x])
   (indexed? [this x])
+  (add-prefix [this prefix uri] [this prefix-map])
   (prefix-map [this])
   (union [this others])
   (intersection [this others])
