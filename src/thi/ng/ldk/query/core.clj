@@ -155,7 +155,7 @@
               (recur
                (reduce #(queue-queries % patterns %2) (pop q) bindings)
                clojure.lang.PersistentVector/EMPTY flt)
-              (recur (pop q) (if flt (flt bindings) bindings) flt)))
+              (recur (pop q) (if flt (filter flt bindings) bindings) flt)))
           (recur (pop q) clojure.lang.PersistentVector/EMPTY flt))))))
 
 (defn select-join
@@ -208,7 +208,34 @@
                       :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
             (into {})))))
 
-(defn not-exists
-  [ds patterns]
-  (fn [bindings]
-    (filter #(not (seq (select-join-from ds patterns % nil))) bindings)))
+(defn filter-compare-numeric
+  [op a b]
+  (let [va? (qvar? a) vb? (qvar? b)
+        ;; add multimethod based on literal type to obtain typed value
+        cast #(Double/parseDouble (api/label (get % %2)))]
+    (cond
+      (and va? vb?) #(op (cast % a) (cast % b))
+      va? #(op (cast % a) b)
+      vb? #(op a (cast % b))
+      :default #(op a b))))
+
+(defn filter-and
+  [& conds] #(every? (fn [f] (f %)) conds))
+
+(defn filter-or
+  [& conds] #(some (fn [f] (f %)) conds))
+
+(defn filter-not-exists
+  [ds patterns] #(not (seq (select-join-from ds patterns % nil))))
+
+(defn order-asc
+  [vars results]
+  (if (coll? vars)
+    (sort-by (fn [r] (reduce #(conj % (api/label (r %2))) [] vars)) results)
+    (sort-by #(api/label (get % vars)) results)))
+
+(defn order-desc
+  [vars results]
+  (if (coll? vars)
+    (sort-by (fn [r] (reduce #(conj % (api/label (r %2))) [] vars)) #(- (compare % %2)) results)
+    (sort-by #(api/label (get % vars)) #(- (compare % %2)) results)))
