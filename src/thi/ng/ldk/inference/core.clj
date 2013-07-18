@@ -8,7 +8,8 @@
    [thi.ng.ldk.common.util :as u]
    [thi.ng.ldk.store.memory :as mem]
    [clojure
-    [set :as set]]
+    [set :as set]
+    [pprint :refer [pprint]]]
    [clojure.java.io :as jio]))
 
 (defn spo-pattern
@@ -71,8 +72,7 @@
   ([ds rule targets inf]
      (let [new-inf (->> inf
                         (set/difference (infer ds rule targets))
-                        (filter
-                         #(nil? (seq (apply api/select ds (api/remove-context %))))))]
+                        (filter #(nil? (seq (apply api/select ds (api/remove-context %))))))]
        (if (seq new-inf)
          (recur
           (apply api/add-many ds new-inf)
@@ -91,6 +91,7 @@
   ([ds g rules num-passes]
      (let [rules (if g (map (fn [[id r t]] [id r (map #(cons g %) t)]) rules) rules)]
        (loop [state [ds {}] i num-passes]
+         (prn :inf-pass (inc (- num-passes i)))
          (if (zero? i) state
              (recur
               (reduce
