@@ -78,7 +78,8 @@
 
 (def XSD
   (resolve-map
-   {:integer "xsd:integer"
+   {:boolean "xsd:boolean"
+    :integer "xsd:integer"
     :decimal "xsd:decimal"
     :double "xsd:double"
     :string "xsd:string"}))
