@@ -146,6 +146,8 @@
     (api/remove-statement this :default s p o))
   (remove-statement [this g s p o]
     (update-in this [:models g] api/remove-statement s p o))
+  (select [this]
+    (api/select this nil nil nil))
   (select [this s p o]
     (mapcat #(api/select % s p o) (vals models)))
   (select [this g s p o]
