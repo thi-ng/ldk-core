@@ -173,7 +173,7 @@
      (select-join (map #(cons ds %) (sort-patterns patterns)) bindings flt)))
 
 (defn filter-result-vars
-  [res vars]
+  [vars res]
   (let [vars (if (coll? vars) vars [vars])]
     (map #(select-keys % vars) res)))
 
@@ -211,13 +211,13 @@
 (defn filter-compare-numeric
   [op a b]
   (let [va? (qvar? a) vb? (qvar? b)
-        ;; add multimethod based on literal type to obtain typed value
+        ;; TODO add multimethod based on literal type to obtain typed value
         cast #(Double/parseDouble (api/label (get % %2)))]
     (cond
-      (and va? vb?) #(op (cast % a) (cast % b))
-      va? #(op (cast % a) b)
-      vb? #(op a (cast % b))
-      :default #(op a b))))
+     (and va? vb?) #(op (cast % a) (cast % b))
+     va? #(op (cast % a) b)
+     vb? #(op a (cast % b))
+     :default #(op a b))))
 
 (defn filter-and
   [& conds] #(every? (fn [f] (f %)) conds))
@@ -239,3 +239,63 @@
   (if (coll? vars)
     (sort-by (fn [r] (reduce #(conj % (api/label (r %2))) [] vars)) #(- (compare % %2)) results)
     (sort-by #(api/label (get % vars)) #(- (compare % %2)) results)))
+
+(comment
+  {:prefixes {:thi "http://thi.ng/owl#"
+              :rel "http://thi.ng/rel#"
+              :dc "http://thi.ng/dc#"}
+   :base "http://thi.ng/owl"
+   :select '[?p ?prj ?lic]
+   :order '?prj
+   :from ds
+   :where '[[?p "dc:creator" ?prj]
+            [?prj "thi:started" ?s]
+            [?prj "thi:hasLicense" ?lic]]
+   :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]})
+
+(defn compile-filter
+  [q spec]
+  (reduce
+   (fn [stack form]
+     ;; (prn form stack)
+     (if (vector? form)
+       (let [[op & more] form
+             f (condp = op
+                 :< (apply filter-compare-numeric < more)
+                 :> (apply filter-compare-numeric > more)
+                 := (apply filter-compare-numeric = more)
+                 :and (apply filter-and (compile-filter q more))
+                 :or (apply filter-or (compile-filter q more))
+                 :not-exists (let [{:keys [from prefixes base]} q
+                                   patterns (if (or base prefixes)
+                                              (ns/resolve-patterns prefixes base more)
+                                              more)]
+                               (filter-not-exists from patterns))
+                 nil)]
+         (when f (conj stack f)))
+       stack))
+   [] spec))
+
+(defn process-select
+  [{:keys [select from] ord :order ord-a :order-asc ord-d :order-desc}
+   patterns filter]
+  (let [res (select-join-from from patterns filter)
+        res (if (= :* select) res
+                (filter-result-vars select res))
+        res (cond
+             ord (order-asc ord res)
+             ord-a (order-asc ord-a res)
+             ord-d (order-desc ord-d res)
+             :default res)]
+    res))
+
+(defn process-query
+  [{:keys [prefixes base where filter] :as q}]
+  (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
+        patterns (if (or base prefixes)
+                   (ns/resolve-patterns prefixes base where)
+                   where)
+        filter (when filter (first (compile-filter q [filter])))]
+    (condp = type
+      :select (process-select q patterns filter)
+      (prn "unimplemented"))))
