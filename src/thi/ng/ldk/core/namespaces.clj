@@ -1,4 +1,6 @@
-(ns thi.ng.ldk.core.namespaces)
+(ns thi.ng.ldk.core.namespaces
+  (:require
+   [thi.ng.ldk.common.util :as util]))
 
 (def default-namespaces
   {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -38,12 +40,13 @@
 
 (defn resolve-patterns
   [prefixes base patterns]
-  (map
-   (fn [[s p o]]
-     [(resolve-item prefixes base s)
-      (if (= "a" p) (str (default-namespaces "rdf") "type") (resolve-item prefixes base p))
-      (resolve-item prefixes base o)])
-   patterns))
+  (let [prefixes (util/stringify-keys prefixes)]
+    (map
+     (fn [[s p o]]
+       [(resolve-item prefixes base s)
+        (if (= "a" p) (str (default-namespaces "rdf") "type") (resolve-item prefixes base p))
+        (resolve-item prefixes base o)])
+     patterns)))
 
 (def RDF
   (resolve-map

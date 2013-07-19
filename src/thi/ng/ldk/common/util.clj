@@ -39,6 +39,11 @@
 
 (def wrap-iri #(str \< % \>))
 
+(defn stringify-keys
+  [m]
+  (into
+   {} (map (fn [[k v :as e]] (if (keyword? k) [(name k) v] e)) m)))
+
 (defn interval-set
   [& ivals]
   (->> ivals
@@ -53,4 +58,4 @@
                        [[] #{}] ivals)]
     (fn [x]
       (if (const x) x
-        (some (fn [[a b]] (and (<= a x) (<= x b))) ivals)))))
+          (some (fn [[a b]] (and (<= a x) (<= x b))) ivals)))))
