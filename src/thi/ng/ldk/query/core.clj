@@ -4,17 +4,10 @@
     [api :as api]
     [namespaces :as ns]]
    [thi.ng.ldk.common.util :as util]
+   [thi.ng.ldk.store.memory :as mem]
    [clojure
     [set :as set]
     [pprint :refer [pprint]]]))
-
-(defn inject-bindings
-  [p bindings]
-  (map #(if (symbol? %) (bindings %) %) p))
-
-(defn extract-var-name
-  [tree]
-  (apply str (util/filter-tree string? tree)))
 
 (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
 
@@ -241,17 +234,24 @@
     (sort-by #(api/label (get % vars)) #(- (compare % %2)) results)))
 
 (comment
-  {:prefixes {:thi "http://thi.ng/owl#"
-              :rel "http://thi.ng/rel#"
-              :dc "http://thi.ng/dc#"}
-   :base "http://thi.ng/owl"
-   :select '[?p ?prj ?lic]
-   :order '?prj
-   :from ds
-   :where '[[?p "dc:creator" ?prj]
-            [?prj "thi:started" ?s]
-            [?prj "thi:hasLicense" ?lic]]
-   :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]})
+  (def q
+    {:prefixes {:thi "http://thi.ng/owl#"
+                :rel "http://thi.ng/rel#"
+                :dc "http://thi.ng/dc#"}
+     :base "http://thi.ng/owl"
+     :select '[?p ?prj ?lic]
+     :order '?prj
+     :from ds
+     :where '[[?p "dc:creator" ?prj]
+              [?prj "thi:started" ?s]
+              [?prj "thi:hasLicense" ?lic]]
+     :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]}))
+
+(defn resolve-patterns
+  [{:keys [prefixes base]} patterns]
+  (if (or base prefixes)
+    (ns/resolve-patterns prefixes base patterns)
+    patterns))
 
 (defn compile-filter
   [q spec]
@@ -266,22 +266,20 @@
                  := (apply filter-compare-numeric = more)
                  :and (apply filter-and (compile-filter q more))
                  :or (apply filter-or (compile-filter q more))
-                 :not-exists (let [{:keys [from prefixes base]} q
-                                   patterns (if (or base prefixes)
-                                              (ns/resolve-patterns prefixes base more)
-                                              more)]
-                               (filter-not-exists from patterns))
-                 nil)]
+                 :not-exists (filter-not-exists (:from q) (resolve-patterns q more))
+                 (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))]
          (when f (conj stack f)))
        stack))
    [] spec))
 
 (defn process-select
-  [{:keys [select from] ord :order ord-a :order-asc ord-d :order-desc}
+  [{:keys [select from limit] ord :order ord-a :order-asc ord-d :order-desc}
    patterns filter]
-  (let [res (select-join-from from patterns filter)
-        res (if (= :* select) res
+  (let [from (if (satisfies? api/PModel from) from (apply api/get-model from))
+        res (select-join-from from patterns filter)
+        res (if (or (nil? select) (= :* select)) res
                 (filter-result-vars select res))
+        res (if limit (take limit res) res)
         res (cond
              ord (order-asc ord res)
              ord-a (order-asc ord-a res)
@@ -289,13 +287,38 @@
              :default res)]
     res))
 
+(defn process-ask
+  [q patterns filter]
+  (when (seq (process-select (assoc q :limit 1) patterns filter)) true))
+
+(defn process-construct
+  [{:keys [prefixes construct where into] :as q} patterns filter]
+  (let [targets (resolve-patterns q construct)
+        res (->> (process-select q patterns filter)
+                 (mapcat
+                  (fn [res]
+                    (map
+                     (fn [[s p o]]
+                       [(if (symbol? s) (res s) s)
+                        (if (symbol? p) (res p) p)
+                        (if (symbol? o) (res o) o)])
+                     targets)))
+                 (set))]
+    (if into
+      (if (satisfies? api/PModel into)
+        (apply api/add-many into res)
+        (api/update-model
+         (into 0) (into 1)
+         (apply api/add-many (apply api/get-model into) res)))
+      (apply api/add-many (mem/make-store prefixes) res))))
+
 (defn process-query
-  [{:keys [prefixes base where filter] :as q}]
+  [{:keys [where filter] :as q}]
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
-        patterns (if (or base prefixes)
-                   (ns/resolve-patterns prefixes base where)
-                   where)
+        patterns (resolve-patterns q where)
         filter (when filter (first (compile-filter q [filter])))]
     (condp = type
       :select (process-select q patterns filter)
+      :ask (process-ask q patterns filter)
+      :construct (process-construct q patterns filter)
       (prn "unimplemented"))))
