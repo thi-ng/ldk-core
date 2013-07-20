@@ -9,14 +9,16 @@
 
 (defn node-value-type
   [x]
+  ;; (prn :nvt x)
   (cond
-   (api/literal? x) [(api/literal-value x) (api/datatype x) :literal]
+   (api/literal? x) [(api/literal-value x) (api/datatype x) :literal x]
    (api/uri? x) [x nil :uri]
    (api/blank? x) [x nil :blank]
    :default nil))
 
 (defn operand-value-type
   [bindings x]
+  ;; (prn :ovt x)
   (cond
    (q/qvar? x) (when-let [v (get bindings x)] (node-value-type v))
    (satisfies? api/PNode x) (node-value-type x)
@@ -33,13 +35,15 @@
 (defn compare-2
   [op a b]
   (fn [bindings]
+    ;; (prn :c2 :ab a b)
     (let [[va ta] (operand-value-type bindings a)
           [vb tb] (operand-value-type bindings b)]
+      ;; (prn :c2 :va va ta :vb vb tb)
       (when (and va vb)
         (cond
          (and (ns/numeric-xsd-types ta) (ns/numeric-xsd-types tb)) (op va vb)
-         (= (:boolean ns/XSD) ta tb) (op va vb)
-         (= (:string ns/XSD) ta tb) (interpret-compare op (.compare ^String va ^String vb))
+         (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
+         (= (:string ns/XSD) ta tb) (interpret-compare op (.compareTo ^String va ^String vb))
          (= (:date-time ns/XSD) ta tb) (interpret-compare op (.compare ^XMLGregorianCalendar va
                                                                        ^XMLGregorianCalendar vb))
          :default nil)))))
@@ -64,6 +68,10 @@
 (defn value-isa?
   [n type] #(= type (nth (operand-value-type % n) 2)))
 
+(defn lang
+  [n]
+  #(let [[_ _ t x] (operand-value-type % n)] (when (= :literal t) (api/language x))))
+
 (def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
 (def math-ops {:mul * :div / :add + :sub -})
 
@@ -71,6 +79,7 @@
 
 (defmulti compile-expr
   (fn [q form]
+    ;; (prn :comp-expr form)
     (if (sequential? form)
       (let [op (first form)]
         (cond
@@ -79,7 +88,7 @@
          :default op))
       :atom)))
 
-(defmethod compile-expr :atom [q a] a)
+(defmethod compile-expr :atom [_ a] a)
 
 (defmethod compile-expr :compare
   [q [op & args]] (apply compare-2 (compare-ops op) (compile-filter q args)))
@@ -107,6 +116,9 @@
 
 (defmethod compile-expr :literal?
   [q [op & args]] (value-isa? (first (compile-filter q args)) :literal))
+
+(defmethod compile-expr :lang
+  [q [op & args]] (lang (first (compile-filter q args))))
 
 (defmethod compile-expr :default
   [q [op & args]]
