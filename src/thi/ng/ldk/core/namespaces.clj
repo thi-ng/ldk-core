@@ -17,10 +17,12 @@
 (defn resolve-pname
   [prefixes ^String pname]
   (when pname
-    (let [idx (.indexOf pname ":")]
-      (when (>= idx 0)
-        (when-let [prefix (get prefixes (subs pname 0 idx))]
-          (str prefix (subs pname (inc idx))))))))
+    (if (string? pname)
+      (let [idx (.indexOf pname ":")]
+        (when (>= idx 0)
+          (when-let [prefix (get prefixes (subs pname 0 idx))]
+            (str prefix (subs pname (inc idx))))))
+      pname)))
 
 (defn resolve-map
   ([m] (resolve-map default-namespaces m))
@@ -79,14 +81,6 @@
     :trans-property "owl:TransitiveProperty"
     :inverse-of "owl:inverseOf"}))
 
-(def XSD
-  (resolve-map
-   {:boolean "xsd:boolean"
-    :integer "xsd:integer"
-    :decimal "xsd:decimal"
-    :double "xsd:double"
-    :string "xsd:string"}))
-
 (def INF
   (resolve-map
    {:ruleset "inf:RuleSet"
@@ -97,3 +91,45 @@
     :subject "inf:subject"
     :predicate "inf:predicate"
     :object "inf:object"}))
+
+(def XSD
+  (resolve-map
+   {:boolean "xsd:boolean"
+    :byte "xsd:byte"
+    :short "xsd:short"
+    :integer "xsd:integer"
+    :int "xsd:int"
+    :long "xsd:long"
+    :non-positive-integer "xsd:nonPositiveInteger"
+    :non-negative-integer "xsd:nonNegativeInteger"
+    :positive-integer "xsd:positiveInteger"
+    :negative-integer "xsd:negativeInteger"
+    :unsigned-byte "xsd:unsignedByte"
+    :unsigned-short "xsd:unsignedShort"
+    :unsigned-int "xsd:unsignedInt"
+    :unsigned-long "xsd:unsignedLong"
+    :decimal "xsd:decimal"
+    :double "xsd:double"
+    :float "xsd:float"
+    :string "xsd:string"
+    :date-time "xsd:dateTime"}))
+
+(def numeric-xsd-types
+  (->> [:integer
+        :decimal
+        :float
+        :double
+        :non-positive-integer
+        :non-negative-integer
+        :positive-integer
+        :negative-integer
+        :long
+        :int
+        :short
+        :byte
+        :unsigned-long
+        :unsigned-int
+        :unsigned-short
+        :unsigned-byte]
+       (map XSD)
+       (set)))
