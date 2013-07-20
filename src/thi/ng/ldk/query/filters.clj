@@ -64,21 +64,23 @@
 (defn not-exists
   [ds patterns] #(not (seq (q/select-join-from ds patterns % nil))))
 
+(def compare-ops {:< < :<= <= := = :>= >= :> >})
+(def math-ops {:mul * :div / :add + :sub -})
+
 (defn compile-filter
   [q spec]
   (reduce
    (fn [stack form]
      ;; (prn form stack)
-     (if (vector? form)
+     (if (sequential? form)
        (let [[op & more] form
-             f (condp = op
-                 :< (apply compare-2 < more)
-                 :> (apply compare-2 > more)
-                 := (apply compare-2 = more)
-                 :and (apply and* (compile-filter q more))
-                 :or (apply or* (compile-filter q more))
-                 :not-exists (not-exists (:from q) (q/resolve-patterns q more))
-                 (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))]
+             f (cond
+                (compare-ops op) (apply compare-2 (compare-ops op) (compile-filter q more))
+                (math-ops op) (apply numeric-op-2 (math-ops op) (compile-filter more))
+                (= :and op) (apply and* (compile-filter q more))
+                (= :or op) (apply or* (compile-filter q more))
+                (= :not-exists op) (not-exists (:from q) (q/resolve-patterns q more))
+                :default (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))]
          (when f (conj stack f)))
-       stack))
+       (conj stack form)))
    [] spec))
