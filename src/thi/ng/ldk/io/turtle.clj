@@ -522,7 +522,7 @@
   (if (next-char? in \^)
     (let [[iri state] (if (= (peek in) \<) (read-iri-ref in state) (read-pname in state))]
       (if iri
-        (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil iri)))]
+        (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil (api/label iri))))]
           ((:state state) in state))
         state))))
 
