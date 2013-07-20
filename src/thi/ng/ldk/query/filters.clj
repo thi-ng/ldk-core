@@ -75,6 +75,15 @@
 (def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
 (def math-ops {:mul * :div / :add + :sub -})
 
+(defn ensure-args
+  [id n args]
+  (if (= n (count args))
+    args
+    (throw
+     (IllegalArgumentException.
+      (str "wrong number of params for expr " id
+           ", got " (count args) ", but expected " n)))))
+
 (declare compile-filter)
 
 (defmulti compile-expr
@@ -91,10 +100,10 @@
 (defmethod compile-expr :atom [_ a] a)
 
 (defmethod compile-expr :compare
-  [q [op & args]] (apply compare-2 (compare-ops op) (compile-filter q args)))
+  [q [op & args]] (apply compare-2 (compare-ops op) (ensure-args op 2 (compile-filter q args))))
 
 (defmethod compile-expr :math
-  [q [op & args]] (apply numeric-op-2 (math-ops op) (compile-filter q args)))
+  [q [op & args]] (apply numeric-op-2 (math-ops op) (ensure-args op 2 (compile-filter q args))))
 
 (defmethod compile-expr :and
   [q [op & args]] (apply and* (compile-filter q args)))
@@ -109,16 +118,16 @@
   [q [op & args]] #(not (exists (:from q) (q/resolve-patterns q args))))
 
 (defmethod compile-expr :blank?
-  [q [op & args]] (value-isa? (first (compile-filter q args)) :blank))
+  [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-filter q args))) :blank))
 
 (defmethod compile-expr :uri?
-  [q [op & args]] (value-isa? (first (compile-filter q args)) :uri))
+  [q [op & args]] (value-isa? (first (ensure-args :uri? 1 (compile-filter q args))) :uri))
 
 (defmethod compile-expr :literal?
-  [q [op & args]] (value-isa? (first (compile-filter q args)) :literal))
+  [q [op & args]] (value-isa? (first (ensure-args :literal? 1 (compile-filter q args))) :literal))
 
 (defmethod compile-expr :lang
-  [q [op & args]] (lang (first (compile-filter q args))))
+  [q [op & args]] (lang (first (ensure-args :lang 1 (compile-filter q args)))))
 
 (defmethod compile-expr :default
   [q [op & args]]
