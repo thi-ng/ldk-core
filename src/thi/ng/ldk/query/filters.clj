@@ -25,7 +25,6 @@
 
 (defn interpret-compare
   [op r]
-  (prn :op op :r r)
   (cond
    (neg? r) (or (= < op) (= <= op))
    (zero? r) (= = op)
@@ -36,8 +35,6 @@
   (fn [bindings]
     (let [[va ta] (operand-value-type bindings a)
           [vb tb] (operand-value-type bindings b)]
-      (prn :v va vb)
-      (prn :t ta tb)
       (when (and va vb)
         (cond
          (and (ns/numeric-xsd-types ta) (ns/numeric-xsd-types tb)) (op va vb)
@@ -61,26 +58,52 @@
 (defn or*
   [& conds] #(some (fn [f] (f %)) conds))
 
-(defn not-exists
-  [ds patterns] #(not (seq (q/select-join-from ds patterns % nil))))
+(defn exists
+  [ds patterns] #(seq (q/select-join-from ds patterns % nil)))
 
-(def compare-ops {:< < :<= <= := = :>= >= :> >})
+(def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
 (def math-ops {:mul * :div / :add + :sub -})
+
+(defmulti compile-expr
+  (fn [q form]
+    (if (sequential? form)
+      (let [op (first form)]
+        (cond
+         (compare-ops op) :compare
+         (math-ops op) :math
+         :default op))
+      :atom)))
+
+(defmethod compile-expr :atom [q a] a)
+
+(defmethod compile-expr :compare
+  [q [op & args]]
+  (apply compare-2 (compare-ops op) (compile-filter q args)))
+
+(defmethod compile-expr :math
+  [q [op & args]]
+  (apply numeric-op-2 (math-ops op) (compile-filter q args)))
+
+(defmethod compile-expr :and
+  [q [op & args]]
+  (apply and* (compile-filter q args)))
+
+(defmethod compile-expr :or
+  [q [op & args]]
+  (apply or* (compile-filter q args)))
+
+(defmethod compile-expr :exists
+  [q [op & args]]
+  #(exists (:from q) (q/resolve-patterns q args)))
+
+(defmethod compile-expr :not-exists
+  [q [op & args]]
+  #(not (exists (:from q) (q/resolve-patterns q args))))
+
+(defmethod compile-expr :default
+  [q [op & args]]
+  (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))
 
 (defn compile-filter
   [q spec]
-  (reduce
-   (fn [stack form]
-     ;; (prn form stack)
-     (if (sequential? form)
-       (let [[op & more] form
-             f (cond
-                (compare-ops op) (apply compare-2 (compare-ops op) (compile-filter q more))
-                (math-ops op) (apply numeric-op-2 (math-ops op) (compile-filter more))
-                (= :and op) (apply and* (compile-filter q more))
-                (= :or op) (apply or* (compile-filter q more))
-                (= :not-exists op) (not-exists (:from q) (q/resolve-patterns q more))
-                :default (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))]
-         (when f (conj stack f)))
-       (conj stack form)))
-   [] spec))
+  (reduce (fn [stack form] (conj stack (compile-expr q form))) [] spec))
