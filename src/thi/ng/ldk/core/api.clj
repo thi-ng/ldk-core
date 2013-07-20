@@ -219,6 +219,9 @@
 (defmethod literal-value (:string ns/XSD)
   [x] (label x))
 
+(defmethod literal-value nil
+  [x] (label x))
+
 (defmethod literal-value (:date-time ns/XSD)
   [x] (try (.newXMLGregorianCalendar xsd-factory ^String (label x)) (catch Exception e)))
 
