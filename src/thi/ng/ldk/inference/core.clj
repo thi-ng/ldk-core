@@ -3,7 +3,7 @@
    [thi.ng.ldk.core
     [api :as api]
     [namespaces :as ns]]
-   [thi.ng.ldk.query.core :as q]
+   [thi.ng.ldk.query.executor :as q]
    [thi.ng.ldk.io.turtle :as ttl]
    [thi.ng.ldk.common.util :as u]
    [thi.ng.ldk.store.memory :as mem]
@@ -67,6 +67,9 @@
        (set)))
 
 (defn infer-rule
+  "Repeatedly infers rule and adds new triples to `ds` until it
+  produces no further results, returns 2-element vector of updated
+  `ds` & inferred triples."
   ([ds rule targets]
      (infer-rule ds rule targets #{}))
   ([ds rule targets inf]
@@ -91,7 +94,6 @@
   ([ds g rules num-passes]
      (let [rules (if g (map (fn [[id r t]] [id r (map #(cons g %) t)]) rules) rules)]
        (loop [state [ds {}] i num-passes]
-         (prn :inf-pass (inc (- num-passes i)))
          (if (zero? i) state
              (recur
               (reduce
