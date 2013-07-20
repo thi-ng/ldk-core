@@ -181,8 +181,10 @@
   ([prefixes] (MemStore. (merge ns/default-namespaces prefixes) {} {} {} {})))
 
 (defn make-dataset
-  ([] (make-dataset {}))
-  ([prefixes] (MemDataset. {:default (make-store prefixes)})))
+  [& {:keys [models prefixes] :or {prefixes {}}}]
+  (reduce #(apply api/update-model % %2)
+          (MemDataset. {:default (make-store prefixes)})
+          models))
 
 (defn select-from
   [[s p o] triples]
