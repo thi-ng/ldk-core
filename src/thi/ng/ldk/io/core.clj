@@ -34,7 +34,7 @@
                        (map #(cond
                               (string? %) (str "\"" % "\"")
                               (api/blank? %) (format "_:b%04d" (blanks %))
-                              (api/uri? %) (let [u (api/uri %)]
+                              (api/uri? %) (let [u (api/label %)]
                                              (if (.startsWith u "http") (str "<" u ">") u))
                               (not (api/plain-literal? %)) (format "\"%s\"@%s" (:label %) (:lang %))
                               :default (str "\"" (:label %) "\""))
@@ -59,7 +59,7 @@
                 (map #(cond
                        (string? %) (str "\"" % "\"")
                        (api/blank? %) (format "\"%04d\"" (blanks %))
-                       (api/uri? %) (format "\"%s\"" (api/uri %))
+                       (api/uri? %) (format "\"%s\"" (api/label %))
                        (:lang %) (format "\"%s@%s\"" (:label %) (:lang %))
                        :default (str "\"" (:label %) "\""))
                      [s o p])))
