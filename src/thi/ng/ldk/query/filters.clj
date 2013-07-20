@@ -10,9 +10,9 @@
 (defn node-value-type
   [x]
   (cond
-   (api/literal? x) [(api/literal-value x) (api/datatype x)]
-   (api/uri? x) [x :uri]
-   (api/blank? x) [x :blank]
+   (api/literal? x) [(api/literal-value x) (api/datatype x) :literal]
+   (api/uri? x) [x nil :uri]
+   (api/blank? x) [x nil :blank]
    :default nil))
 
 (defn operand-value-type
@@ -21,7 +21,7 @@
    (q/qvar? x) (when-let [v (get bindings x)] (node-value-type v))
    (satisfies? api/PNode x) (node-value-type x)
    (fn? x) (recur bindings (x bindings))
-   :default  [x (api/xsd-type x)]))
+   :default  [x (api/xsd-type x) :const]))
 
 (defn interpret-compare
   [op r]
@@ -61,8 +61,13 @@
 (defn exists
   [ds patterns] #(seq (q/select-join-from ds patterns % nil)))
 
+(defn value-isa?
+  [n type] #(= type (nth (operand-value-type % n) 2)))
+
 (def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
 (def math-ops {:mul * :div / :add + :sub -})
+
+(declare compile-filter)
 
 (defmulti compile-expr
   (fn [q form]
@@ -77,28 +82,31 @@
 (defmethod compile-expr :atom [q a] a)
 
 (defmethod compile-expr :compare
-  [q [op & args]]
-  (apply compare-2 (compare-ops op) (compile-filter q args)))
+  [q [op & args]] (apply compare-2 (compare-ops op) (compile-filter q args)))
 
 (defmethod compile-expr :math
-  [q [op & args]]
-  (apply numeric-op-2 (math-ops op) (compile-filter q args)))
+  [q [op & args]] (apply numeric-op-2 (math-ops op) (compile-filter q args)))
 
 (defmethod compile-expr :and
-  [q [op & args]]
-  (apply and* (compile-filter q args)))
+  [q [op & args]] (apply and* (compile-filter q args)))
 
 (defmethod compile-expr :or
-  [q [op & args]]
-  (apply or* (compile-filter q args)))
+  [q [op & args]] (apply or* (compile-filter q args)))
 
 (defmethod compile-expr :exists
-  [q [op & args]]
-  #(exists (:from q) (q/resolve-patterns q args)))
+  [q [op & args]] (exists (:from q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :not-exists
-  [q [op & args]]
-  #(not (exists (:from q) (q/resolve-patterns q args))))
+  [q [op & args]] #(not (exists (:from q) (q/resolve-patterns q args))))
+
+(defmethod compile-expr :blank?
+  [q [op & args]] (value-isa? (first (compile-filter q args)) :blank))
+
+(defmethod compile-expr :uri?
+  [q [op & args]] (value-isa? (first (compile-filter q args)) :uri))
+
+(defmethod compile-expr :literal?
+  [q [op & args]] (value-isa? (first (compile-filter q args)) :literal))
 
 (defmethod compile-expr :default
   [q [op & args]]
