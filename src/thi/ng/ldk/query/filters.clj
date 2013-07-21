@@ -32,6 +32,17 @@
    (zero? r) (= = op)
    :default (or (= > op) (= >= op))))
 
+(defn compare-2*
+  [op va ta vb tb]
+  (when (and va vb)
+    (cond
+     (and (ns/numeric-xsd-types ta) (ns/numeric-xsd-types tb)) (op va vb)
+     (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
+     (= (:string ns/XSD) ta tb) (interpret-compare op (.compareTo ^String va ^String vb))
+     (= (:date-time ns/XSD) ta tb) (interpret-compare op (.compare ^XMLGregorianCalendar va
+                                                                   ^XMLGregorianCalendar vb))
+     :default nil)))
+
 (defn compare-2
   [op a b]
   (fn [bindings]
@@ -39,14 +50,7 @@
     (let [[va ta] (operand-value-type bindings a)
           [vb tb] (operand-value-type bindings b)]
       ;; (prn :c2 :va va ta :vb vb tb)
-      (when (and va vb)
-        (cond
-         (and (ns/numeric-xsd-types ta) (ns/numeric-xsd-types tb)) (op va vb)
-         (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
-         (= (:string ns/XSD) ta tb) (interpret-compare op (.compareTo ^String va ^String vb))
-         (= (:date-time ns/XSD) ta tb) (interpret-compare op (.compare ^XMLGregorianCalendar va
-                                                                       ^XMLGregorianCalendar vb))
-         :default nil)))))
+      (compare-2* op va ta vb tb))))
 
 (defn numeric-op-2
   [op a b]
@@ -68,9 +72,23 @@
 (defn value-isa?
   [n type] #(= type (nth (operand-value-type % n) 2)))
 
+(defn numeric?
+  [n] #(ns/numeric-xsd-types (second (operand-value-type % n))))
+
 (defn lang
   [n]
-  #(let [[_ _ t x] (operand-value-type % n)] (when (= :literal t) (api/language x))))
+  #(let [[_ _ t x] (operand-value-type % n)]
+     (when (= :literal t) (api/language x))))
+
+(defn in-set
+  [x set]
+  (fn [bindings]
+    (let [[va ta] (operand-value-type bindings x)]
+      (when va
+        (prn :va va :ta ta)
+        (some
+         #(let [[vb tb] (operand-value-type bindings %)] (prn :vb vb :tb tb) (compare-2* = va ta vb tb))
+         set)))))
 
 (def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
 (def math-ops {:mul * :div / :add + :sub -})
@@ -126,8 +144,16 @@
 (defmethod compile-expr :literal?
   [q [op & args]] (value-isa? (first (ensure-args :literal? 1 (compile-filter q args))) :literal))
 
+(defmethod compile-expr :numeric?
+  [q [op & args]] (numeric? (first (ensure-args :numeric? 1 (compile-filter q args)))))
+
 (defmethod compile-expr :lang
   [q [op & args]] (lang (first (ensure-args :lang 1 (compile-filter q args)))))
+
+(defmethod compile-expr :in
+  [q [op & args]]
+  (ensure-args :in 2 args)
+  (in-set (first (compile-filter q [(first args)])) (compile-filter q (second args))))
 
 (defmethod compile-expr :default
   [q [op & args]]
