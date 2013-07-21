@@ -43,10 +43,15 @@
 (defn resolve-patterns
   [prefixes base patterns]
   (map
-   (fn [[s p o]]
-     [(resolve-item prefixes base s)
-      (if (= "a" p) (str (default-namespaces "rdf") "type") (resolve-item prefixes base p))
-      (resolve-item prefixes base o)])
+   (fn [[s p o :as t]]
+     (let [ss (resolve-item prefixes base s)
+           pp (if (= "a" p)
+               (str (default-namespaces "rdf") "type")
+               (resolve-item prefixes base p))
+           oo (resolve-item prefixes base o)]
+       (if (and ss pp oo)
+         [ss pp oo]
+         (throw (IllegalArgumentException. (str "couldn't resolve pattern: " t))))))
    patterns))
 
 (def RDF
