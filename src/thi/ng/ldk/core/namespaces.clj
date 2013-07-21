@@ -42,13 +42,12 @@
 
 (defn resolve-patterns
   [prefixes base patterns]
-  (let [prefixes (util/stringify-keys prefixes)]
-    (map
-     (fn [[s p o]]
-       [(resolve-item prefixes base s)
-        (if (= "a" p) (str (default-namespaces "rdf") "type") (resolve-item prefixes base p))
-        (resolve-item prefixes base o)])
-     patterns)))
+  (map
+   (fn [[s p o]]
+     [(resolve-item prefixes base s)
+      (if (= "a" p) (str (default-namespaces "rdf") "type") (resolve-item prefixes base p))
+      (resolve-item prefixes base o)])
+   patterns))
 
 (def RDF
   (resolve-map

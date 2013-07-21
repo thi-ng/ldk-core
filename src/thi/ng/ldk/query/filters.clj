@@ -33,24 +33,26 @@
    :default (or (= > op) (= >= op))))
 
 (defn compare-2*
-  [op va ta vb tb]
+  [op [va ta na] [vb tb nb]]
   (when (and va vb)
     (cond
      (and (ns/numeric-xsd-types ta) (ns/numeric-xsd-types tb)) (op va vb)
-     (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
      (= (:string ns/XSD) ta tb) (interpret-compare op (.compareTo ^String va ^String vb))
      (= (:date-time ns/XSD) ta tb) (interpret-compare op (.compare ^XMLGregorianCalendar va
                                                                    ^XMLGregorianCalendar vb))
+     (or (= :uri na nb) (= :blank na nb)) (interpret-compare op (.compareTo ^String (api/label va)
+                                                                            ^String (api/label vb)))
+     (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
      :default nil)))
 
 (defn compare-2
   [op a b]
   (fn [bindings]
     ;; (prn :c2 :ab a b)
-    (let [[va ta] (operand-value-type bindings a)
-          [vb tb] (operand-value-type bindings b)]
+    (let [opa (operand-value-type bindings a)
+          opb (operand-value-type bindings b)]
       ;; (prn :c2 :va va ta :vb vb tb)
-      (compare-2* op va ta vb tb))))
+      (compare-2* op opa opb))))
 
 (defn numeric-op-2
   [op a b]
@@ -80,14 +82,27 @@
   #(let [[_ _ t x] (operand-value-type % n)]
      (when (= :literal t) (api/language x))))
 
+(defn iri
+  [prefixes base n]
+  #(let [[v t nt] (operand-value-type % n)]
+     (cond
+      (= (:string ns/XSD) t)
+      (let [iri (when prefixes (ns/resolve-pname prefixes v))
+            iri (if iri iri
+                    (when (and base (= \< (first v)))
+                      (ns/resolve-iri base (subs v 1 (dec (count v))))))]
+        (prn :iri iri v)
+        (api/make-resource (or iri v)))
+      (= :uri nt) v
+      :default nil)))
+
 (defn in-set
   [x set]
   (fn [bindings]
-    (let [[va ta] (operand-value-type bindings x)]
-      (when va
-        (prn :va va :ta ta)
+    (let [opa (operand-value-type bindings x)]
+      (when (first opa)
         (some
-         #(let [[vb tb] (operand-value-type bindings %)] (prn :vb vb :tb tb) (compare-2* = va ta vb tb))
+         #(compare-2* = opa (operand-value-type bindings %))
          set)))))
 
 (def compare-ops {:< < :<= <= := = :>= >= :> > :!= not=})
@@ -154,6 +169,15 @@
   [q [op & args]]
   (ensure-args :in 2 args)
   (in-set (first (compile-filter q [(first args)])) (compile-filter q (second args))))
+
+(defmethod compile-expr :iri
+  [{:keys [prefixes base] :as q} [op & args]]
+  (iri prefixes base (first (ensure-args :iri 1 (compile-filter q args)))))
+
+(defmethod compile-expr :uuid
+  [q [op & args]]
+  (ensure-args :uuid 0 args)
+  (fn [_] (api/make-resource (str "urn:uuid:" (.toString (java.util.UUID/randomUUID))))))
 
 (defmethod compile-expr :default
   [q [op & args]]

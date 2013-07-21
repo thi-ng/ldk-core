@@ -115,8 +115,9 @@
      :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]}))
 
 (defn process-query
-  [{:keys [where filter] :as q}]
+  [{:keys [prefixes where filter] :as q}]
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
+        q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)
         patterns (q/resolve-patterns q where)
         filter (when filter (first (f/compile-filter q [filter])))]
     (condp = type
