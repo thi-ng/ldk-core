@@ -13,8 +13,8 @@
   ;; (prn :nvt x)
   (cond
    (api/literal? x) [(api/literal-value x) (api/datatype x) :literal x]
-   (api/uri? x) [x nil :uri]
-   (api/blank? x) [x nil :blank]
+   (api/uri? x) [(api/label x) nil :uri x]
+   (api/blank? x) [(api/label x) nil :blank x]
    :default nil))
 
 (defn operand-value-type
@@ -41,8 +41,7 @@
      (= (:string ns/XSD) ta tb) (interpret-compare op (.compareTo ^String va ^String vb))
      (= (:date-time ns/XSD) ta tb) (interpret-compare op (.compare ^XMLGregorianCalendar va
                                                                    ^XMLGregorianCalendar vb))
-     (or (= :uri na nb) (= :blank na nb)) (interpret-compare op (.compareTo ^String (api/label va)
-                                                                            ^String (api/label vb)))
+     (or (= :uri na nb) (= :blank na nb)) (interpret-compare op (.compareTo ^String va ^String vb))
      (= (:boolean ns/XSD) ta tb) (interpret-compare op (.compareTo ^Boolean va ^Boolean vb))
      :default nil)))
 
@@ -64,10 +63,10 @@
         (op va vb)))))
 
 (defn and*
-  [& conds] #(every? (fn [f] (f %)) conds))
+  [& conds] #(every? (fn [f] (first (operand-value-type % f))) conds))
 
 (defn or*
-  [& conds] #(some (fn [f] (f %)) conds))
+  [& conds] #(some (fn [f] (first (operand-value-type % f))) conds))
 
 (defn exists
   [ds patterns] #(seq (q/select-join-from ds patterns % nil)))
@@ -96,6 +95,13 @@
         (api/make-resource (or iri v)))
       (= :uri nt) v
       :default nil)))
+
+(defn concat*
+  [& args]
+  (fn [bindings]
+    (let [res (map #(first (operand-value-type bindings %)) args)]
+      (when (every? (complement nil?) res)
+        (apply str res)))))
 
 (defn in-set
   [x set]
@@ -179,6 +185,9 @@
   [q [op & args]]
   (ensure-args :uuid 0 args)
   (fn [_] (api/make-resource (str "urn:uuid:" (util/uuid)))))
+
+(defmethod compile-expr :concat
+  [q [op & args]] (apply concat* (compile-filter q args)))
 
 (defmethod compile-expr :default
   [q [op & args]]

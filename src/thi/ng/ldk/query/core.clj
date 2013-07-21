@@ -60,11 +60,20 @@
                       :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
             (into {})))))
 
+(defn inject-bind-expr
+  [res [var expr]]
+  (if-let [r (expr res)] (assoc res var r) res))
+
+(defn process-bindings
+  [binds res]
+  (map (fn [r] (reduce inject-bind-expr r binds)) res))
+
 (defn process-select
   [{:keys [select from limit] ord :order ord-a :order-asc ord-d :order-desc}
-   patterns filter]
+   patterns filter bindings]
   (let [from (if (satisfies? api/PModel from) from (apply api/get-model from))
         res (q/select-join-from from patterns filter)
+        res (if bindings (process-bindings bindings res) res)
         res (if (or (nil? select) (= :* select)) res
                 (filter-result-vars select res))
         res (if limit (take limit res) res)
@@ -76,13 +85,13 @@
     res))
 
 (defn process-ask
-  [q patterns filter]
-  (when (seq (process-select (assoc q :limit 1) patterns filter)) true))
+  [q patterns filter bindings]
+  (when (seq (process-select (assoc q :limit 1) patterns filter bindings)) true))
 
 (defn process-construct
-  [{:keys [prefixes construct where into] :as q} patterns filter]
+  [{:keys [prefixes construct where into] :as q} patterns filter bindings]
   (let [targets (q/resolve-patterns q construct)
-        res (->> (process-select q patterns filter)
+        res (->> (process-select q patterns filter bindings)
                  (mapcat
                   (fn [res]
                     (map
@@ -112,16 +121,21 @@
      :where '[[?p "dc:creator" ?prj]
               [?prj "thi:started" ?s]
               [?prj "thi:hasLicense" ?lic]]
-     :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]}))
+     :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]
+     :bind {'?title [:concat ?prj " (" ?s ")"]}}))
 
 (defn process-query
-  [{:keys [prefixes where filter] :as q}]
+  [{:keys [prefixes where filter bindings] :as q}]
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
         q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)
         patterns (q/resolve-patterns q where)
-        filter (when filter (first (f/compile-filter q [filter])))]
+        filter (when filter (first (f/compile-filter q [filter])))
+        bindings (when bindings
+                   (->> bindings
+                        (map (fn [[v exp]] [v (first (f/compile-filter q [exp]))]))
+                        (into {})))]
     (condp = type
-      :select (process-select q patterns filter)
-      :ask (process-ask q patterns filter)
-      :construct (process-construct q patterns filter)
+      :select (process-select q patterns filter bindings)
+      :ask (process-ask q patterns filter bindings)
+      :construct (process-construct q patterns filter bindings)
       (prn "unimplemented"))))
