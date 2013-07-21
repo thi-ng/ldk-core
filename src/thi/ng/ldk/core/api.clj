@@ -1,6 +1,7 @@
 (ns thi.ng.ldk.core.api
   (:require
-   [thi.ng.ldk.core.namespaces :as ns]))
+   [thi.ng.ldk.core.namespaces :as ns]
+   [thi.ng.ldk.common.util :as util]))
 
 (defprotocol PModel
   (add-statement [this s p o] [this g s p o])
@@ -92,7 +93,7 @@
   [uri] (NodeURI. uri))
 
 (defn make-blank-node
-  ([] (NodeBlank. (.toString (java.util.UUID/randomUUID))))
+  ([] (NodeBlank. (util/uuid)))
   ([id] (NodeBlank. id)))
 
 (defn make-literal

@@ -3,7 +3,8 @@
    [thi.ng.ldk.core
     [api :as api]
     [namespaces :as ns]]
-   [thi.ng.ldk.query.executor :as q])
+   [thi.ng.ldk.query.executor :as q]
+   [thi.ng.ldk.common.util :as util])
   (:import
    [javax.xml.datatype XMLGregorianCalendar]))
 
@@ -177,7 +178,7 @@
 (defmethod compile-expr :uuid
   [q [op & args]]
   (ensure-args :uuid 0 args)
-  (fn [_] (api/make-resource (str "urn:uuid:" (.toString (java.util.UUID/randomUUID))))))
+  (fn [_] (api/make-resource (str "urn:uuid:" (util/uuid)))))
 
 (defmethod compile-expr :default
   [q [op & args]]

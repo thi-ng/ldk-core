@@ -1,5 +1,7 @@
 (ns thi.ng.ldk.common.util)
 
+(defn uuid [] (.toString (java.util.UUID/randomUUID)))
+
 (defn eset [e e2] (if (set? e) (conj e e2) #{e2}))
 
 (defn cartesian-product
