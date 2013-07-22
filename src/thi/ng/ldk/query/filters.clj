@@ -155,7 +155,9 @@
   [q [op & args]] (exists (:from q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :not-exists
-  [q [op & args]] #(not (exists (:from q) (q/resolve-patterns q args))))
+  [q [op & args]]
+  (let [f (exists (:from q) (q/resolve-patterns q args))]
+    #(not (f %))))
 
 (defmethod compile-expr :blank?
   [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-filter q args))) :blank))
