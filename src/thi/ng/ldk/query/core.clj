@@ -87,38 +87,6 @@
     (mapcat
      #(if-let [r (q/select-join-from (resolve-from from) patterns % nil)] r %) res)))
 
-(defn process-optional*
-  [{:keys [optional where from] :as q} res]
-  (let [patterns (q/resolve-patterns q optional)
-        w-vars (set (util/filter-tree q/qvar? where))
-        o-vars (set (util/filter-tree q/qvar? patterns))
-        vars (set/intersection w-vars o-vars)
-        _ (prn vars :w w-vars :o o-vars)
-        bindings (q/accumulate-var-values res vars)
-        _ (prn :bindings bindings)
-        ores (q/select-join-from (resolve-from from) patterns bindings nil)
-        rmap (group-by #(select-keys % vars) res)]
-    (prn :opt-res)
-    (pprint ores)
-    (if (seq vars)
-      (->> ores
-           (reduce
-            (fn [rmap o]
-              (let [oi (select-keys o vars)
-                    od (apply dissoc o vars)]
-                (if-let [r (rmap oi)]
-                  (assoc rmap oi (map #(merge % od) r))
-                  rmap)))
-            rmap)
-           (vals)
-           (mapcat identity))
-      (let [bvals (->> w-vars
-                       (q/accumulate-var-values res)
-                       (vals)
-                       (apply concat)
-                       (set))]
-        (concat res (filter #(not (some (fn [[_ v]] (bvals v)) %)) ores))))))
-
 (defn process-bindings
   [binds res]
   (map (fn [r] (reduce inject-bind-expr r binds)) res))
