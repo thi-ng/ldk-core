@@ -23,17 +23,30 @@
    (fn [r] (into (sorted-map) (map (fn [[k v]] [(-> k name (subs 1) keyword) v]) r)))
    results))
 
+(defn node-label-or-val
+  [x] (if (satisfies? api/PNode x) (api/label x) x))
+
 (defn order-asc
   [vars results]
   (if (coll? vars)
-    (sort-by (fn [r] (reduce #(conj % (api/label (r %2))) [] vars)) results)
-    (sort-by #(api/label (get % vars)) results)))
+    (sort-by
+     (fn [r] (reduce #(conj % (node-label-or-val (r %2))) [] vars))
+     results)
+    (sort-by
+     #(node-label-or-val (get % vars))
+     results)))
 
 (defn order-desc
   [vars results]
   (if (coll? vars)
-    (sort-by (fn [r] (reduce #(conj % (api/label (r %2))) [] vars)) #(- (compare ^String % ^String %2)) results)
-    (sort-by #(api/label (get % vars)) #(- (compare ^String % ^String %2)) results)))
+    (sort-by
+     (fn [r] (reduce #(conj % (node-label-or-val (r %2))) [] vars))
+     #(- (compare ^String % ^String %2))
+     results)
+    (sort-by
+     #(node-label-or-val (get % vars))
+     #(- (compare ^String % ^String %2))
+     results)))
 
 (defn select-reified
   "Selects all reified statements from store, optional for given triple
@@ -70,16 +83,23 @@
 
 (defn process-optional
   [{:keys [optional where from] :as q} res]
+  (let [patterns (q/resolve-patterns q optional)]
+    (mapcat
+     #(if-let [r (q/select-join-from (resolve-from from) patterns % nil)] r %) res)))
+
+(defn process-optional*
+  [{:keys [optional where from] :as q} res]
   (let [patterns (q/resolve-patterns q optional)
         w-vars (set (util/filter-tree q/qvar? where))
         o-vars (set (util/filter-tree q/qvar? patterns))
         vars (set/intersection w-vars o-vars)
-        ;; _ (prn vars :w w-vars :o o-vars)
+        _ (prn vars :w w-vars :o o-vars)
         bindings (q/accumulate-var-values res vars)
-        ;; _ (prn :bindings bindings)
+        _ (prn :bindings bindings)
         ores (q/select-join-from (resolve-from from) patterns bindings nil)
         rmap (group-by #(select-keys % vars) res)]
-    ;; (prn :opt-res ores)
+    (prn :opt-res)
+    (pprint ores)
     (if (seq vars)
       (->> ores
            (reduce
@@ -92,7 +112,12 @@
             rmap)
            (vals)
            (mapcat identity))
-      (concat res ores))))
+      (let [bvals (->> w-vars
+                       (q/accumulate-var-values res)
+                       (vals)
+                       (apply concat)
+                       (set))]
+        (concat res (filter #(not (some (fn [[_ v]] (bvals v)) %)) ores))))))
 
 (defn process-bindings
   [binds res]
@@ -101,10 +126,9 @@
 (defn process-select
   [{:keys [select optional from limit] ord :order ord-a :order-asc ord-d :order-desc :as q}
    patterns filter bindings]
-  (let [from (resolve-from from)
-        res (q/select-join-from from patterns filter)
-        res (if bindings (process-bindings bindings res) res)
+  (let [res (q/select-join-from (resolve-from from) patterns filter)
         res (if optional (process-optional q res) res)
+        res (if bindings (process-bindings bindings res) res)
         res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))
         res (if limit (take limit res) res)
         res (cond
@@ -169,3 +193,8 @@
       :ask (process-ask q patterns filter bindings)
       :construct (process-construct q patterns filter bindings)
       (prn "unimplemented"))))
+
+
+;; 0800 0852233
+;; LB 28242854
+;; 0800 443311
