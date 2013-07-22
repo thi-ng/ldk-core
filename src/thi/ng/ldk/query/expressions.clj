@@ -12,7 +12,7 @@
   [x]
   ;; (prn :nvt x)
   (cond
-   (api/literal? x) [(api/literal-value x) (api/datatype x) :literal x]
+   (api/literal? x) [(api/literal-value x) (or (api/datatype x) (:string ns/XSD)) :literal x]
    (api/uri? x) [(api/label x) nil :uri x]
    (api/blank? x) [(api/label x) nil :blank x]
    :default nil))
@@ -91,7 +91,6 @@
             iri (if iri iri
                     (when (and base (= \< (first v)))
                       (ns/resolve-iri base (subs v 1 (dec (count v))))))]
-        (prn :iri iri v)
         (api/make-resource (or iri v)))
       (= :uri nt) v
       :default nil)))
