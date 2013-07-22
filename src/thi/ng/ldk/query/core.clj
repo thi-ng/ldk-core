@@ -64,18 +64,48 @@
   [res [var expr]]
   (if-let [r (expr res)] (assoc res var r) res))
 
+(defn resolve-from
+  [from]
+  (if (satisfies? api/PModel from) from (apply api/get-model from)))
+
+(defn process-optional
+  [{:keys [optional where from] :as q} res]
+  (let [patterns (q/resolve-patterns q optional)
+        w-vars (set (util/filter-tree q/qvar? where))
+        o-vars (set (util/filter-tree q/qvar? patterns))
+        vars (set/intersection w-vars o-vars)
+        ;; _ (prn vars :w w-vars :o o-vars)
+        bindings (q/accumulate-var-values res vars)
+        ;; _ (prn :bindings bindings)
+        ores (q/select-join-from (resolve-from from) patterns bindings nil)
+        rmap (group-by #(select-keys % vars) res)]
+    ;; (prn :opt-res ores)
+    (if (seq vars)
+      (->> ores
+           (reduce
+            (fn [rmap o]
+              (let [oi (select-keys o vars)
+                    od (apply dissoc o vars)]
+                (if-let [r (rmap oi)]
+                  (assoc rmap oi (map #(merge % od) r))
+                  rmap)))
+            rmap)
+           (vals)
+           (mapcat identity))
+      (concat res ores))))
+
 (defn process-bindings
   [binds res]
   (map (fn [r] (reduce inject-bind-expr r binds)) res))
 
 (defn process-select
-  [{:keys [select from limit] ord :order ord-a :order-asc ord-d :order-desc}
+  [{:keys [select optional from limit] ord :order ord-a :order-asc ord-d :order-desc :as q}
    patterns filter bindings]
-  (let [from (if (satisfies? api/PModel from) from (apply api/get-model from))
+  (let [from (resolve-from from)
         res (q/select-join-from from patterns filter)
         res (if bindings (process-bindings bindings res) res)
-        res (if (or (nil? select) (= :* select)) res
-                (filter-result-vars select res))
+        res (if optional (process-optional q res) res)
+        res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))
         res (if limit (take limit res) res)
         res (cond
              ord (order-asc ord res)
