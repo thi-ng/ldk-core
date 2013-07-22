@@ -1,4 +1,4 @@
-(ns thi.ng.ldk.query.filters
+(ns thi.ng.ldk.query.expressions
   (:require
    [thi.ng.ldk.core
     [api :as api]
@@ -124,7 +124,7 @@
       (str "wrong number of params for expr " id
            ", got " (count args) ", but expected " n)))))
 
-(declare compile-filter)
+(declare compile-expression)
 
 (defmulti compile-expr
   (fn [q form]
@@ -140,16 +140,16 @@
 (defmethod compile-expr :atom [_ a] a)
 
 (defmethod compile-expr :compare
-  [q [op & args]] (apply compare-2 (compare-ops op) (ensure-args op 2 (compile-filter q args))))
+  [q [op & args]] (apply compare-2 (compare-ops op) (ensure-args op 2 (compile-expression q args))))
 
 (defmethod compile-expr :math
-  [q [op & args]] (apply numeric-op-2 (math-ops op) (ensure-args op 2 (compile-filter q args))))
+  [q [op & args]] (apply numeric-op-2 (math-ops op) (ensure-args op 2 (compile-expression q args))))
 
 (defmethod compile-expr :and
-  [q [op & args]] (apply and* (compile-filter q args)))
+  [q [op & args]] (apply and* (compile-expression q args)))
 
 (defmethod compile-expr :or
-  [q [op & args]] (apply or* (compile-filter q args)))
+  [q [op & args]] (apply or* (compile-expression q args)))
 
 (defmethod compile-expr :exists
   [q [op & args]] (exists (:from q) (q/resolve-patterns q args)))
@@ -160,28 +160,28 @@
     #(not (f %))))
 
 (defmethod compile-expr :blank?
-  [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-filter q args))) :blank))
+  [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-expression q args))) :blank))
 
 (defmethod compile-expr :uri?
-  [q [op & args]] (value-isa? (first (ensure-args :uri? 1 (compile-filter q args))) :uri))
+  [q [op & args]] (value-isa? (first (ensure-args :uri? 1 (compile-expression q args))) :uri))
 
 (defmethod compile-expr :literal?
-  [q [op & args]] (value-isa? (first (ensure-args :literal? 1 (compile-filter q args))) :literal))
+  [q [op & args]] (value-isa? (first (ensure-args :literal? 1 (compile-expression q args))) :literal))
 
 (defmethod compile-expr :numeric?
-  [q [op & args]] (numeric? (first (ensure-args :numeric? 1 (compile-filter q args)))))
+  [q [op & args]] (numeric? (first (ensure-args :numeric? 1 (compile-expression q args)))))
 
 (defmethod compile-expr :lang
-  [q [op & args]] (lang (first (ensure-args :lang 1 (compile-filter q args)))))
+  [q [op & args]] (lang (first (ensure-args :lang 1 (compile-expression q args)))))
 
 (defmethod compile-expr :in
   [q [op & args]]
   (ensure-args :in 2 args)
-  (in-set (first (compile-filter q [(first args)])) (compile-filter q (second args))))
+  (in-set (first (compile-expression q [(first args)])) (compile-expression q (second args))))
 
 (defmethod compile-expr :iri
   [{:keys [prefixes base] :as q} [op & args]]
-  (iri prefixes base (first (ensure-args :iri 1 (compile-filter q args)))))
+  (iri prefixes base (first (ensure-args :iri 1 (compile-expression q args)))))
 
 (defmethod compile-expr :uuid
   [q [op & args]]
@@ -189,12 +189,12 @@
   (fn [_] (api/make-resource (str "urn:uuid:" (util/uuid)))))
 
 (defmethod compile-expr :concat
-  [q [op & args]] (apply concat* (compile-filter q args)))
+  [q [op & args]] (apply concat* (compile-expression q args)))
 
 (defmethod compile-expr :default
   [q [op & args]]
   (throw (IllegalArgumentException. (str "error compiling filter, illegal op: " op))))
 
-(defn compile-filter
+(defn compile-expression
   [q spec]
   (reduce (fn [stack form] (conj stack (compile-expr q form))) [] spec))

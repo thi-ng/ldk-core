@@ -6,7 +6,7 @@
    [thi.ng.ldk.common.util :as util]
    [thi.ng.ldk.query
     [executor :as q]
-    [filters :as f]]
+    [expressions :as exp]]
    [thi.ng.ldk.store.memory :as mem]
    [clojure
     [set :as set]
@@ -129,10 +129,10 @@
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
         q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)
         patterns (q/resolve-patterns q where)
-        filter (when filter (first (f/compile-filter q [filter])))
+        filter (when filter (first (exp/compile-expression q [filter])))
         bindings (when bindings
                    (->> bindings
-                        (map (fn [[v exp]] [v (first (f/compile-filter q [exp]))]))
+                        (map (fn [[v exp]] [v (first (exp/compile-expression q [exp]))]))
                         (into {})))]
     (condp = type
       :select (process-select q patterns filter bindings)
