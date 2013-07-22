@@ -39,14 +39,14 @@
         {?a #{\"me\" \"you\"} ?b #{\"foo\" \"bar\"})
       => ((\"me\" :type \"foo\") (\"me\" :type \"bar\")
           (\"you\" :type \"foo\") (\"you\" :type \"bar\"))"
-  [[s p o :as t] bindings]
+  [[s p o] bindings]
   (let [s (or (bindings s) s)
         p (or (bindings p) p)
         o (or (bindings o) o)]
-    (if (some set? t)
+    (if (some set? [s p o])
       (util/cartesian-product
        (if (set? s) s #{s}) (if (set? p) p #{p}) (if (set? o) o #{o}))
-      [t])))
+      [[s p o]])))
 
 (defn inject-res-var
   "Takes a map `r`, a vector `t`, a var name `v` and an index. If `v`
