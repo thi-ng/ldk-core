@@ -3,6 +3,7 @@
    [thi.ng.ldk.core
     [api :as api]
     [namespaces :as ns]]
+   [thi.ng.ldk.io.turtle :as ttl]
    [thi.ng.ldk.common.util :as util]))
 
 (def ^:dynamic *hashimpl* (comp hash api/index-value))
@@ -185,6 +186,11 @@
   (reduce #(apply api/update-model % %2)
           (MemDataset. {:default (make-store prefixes)})
           models))
+
+(defn init-store-from-model
+  [f]
+  (let [triples (ttl/parse-triples-with-meta f)]
+    (apply api/add-many (make-store (:prefixes (meta (first triples)))) triples)))
 
 (defn select-from
   [[s p o] triples]
