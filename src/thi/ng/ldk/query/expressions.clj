@@ -160,13 +160,13 @@
   [q [op & args]] (apply or* (compile-expression q args)))
 
 (defmethod compile-expr :exists
-  [q [op & args]] (exists (:from q) (q/resolve-patterns q args)))
+  [q [op & args]] (exists (:graph q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :not-exists
-  [q [op & args]] (not-exists (:from q) (q/resolve-patterns q args)))
+  [q [op & args]] (not-exists (:graph q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :minus
-  [q [op & args]] (minus (:from q) (q/resolve-patterns q args)))
+  [q [op & args]] (minus (:graph q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :blank?
   [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-expression q args))) :blank))

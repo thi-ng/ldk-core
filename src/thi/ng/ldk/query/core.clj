@@ -73,15 +73,15 @@
                       :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
             (into {})))))
 
-(defn resolve-from
-  [from]
-  (if (satisfies? api/PModel from) from (apply api/get-model from)))
+(defn resolve-graph
+  [g]
+  (if (satisfies? api/PModel g) g (apply api/get-model g)))
 
 (defn process-optional
-  [{:keys [optional where from] :as q} res]
+  [{:keys [optional where graph] :as q} res]
   (let [patterns (q/resolve-patterns q optional)]
     (mapcat
-     #(if-let [r (q/select-join-from (resolve-from from) patterns % nil nil)] r %)
+     #(if-let [r (q/select-join-from (resolve-graph graph) patterns % nil nil)] r %)
      res)))
 
 (comment
@@ -89,14 +89,14 @@
     {:prefixes (api/prefix-map ds2)
      :base "http://thi.ng/owl"
      :select :*
-     :from ds2
+     :graph ds2
      :query [{:where '[[?p "foaf:givenName" ?gn]] :filter '[:not-exists [?p "foaf:surname" "'schmidt'"]] :optional [{:where '[[?p "thi:age" ?a]]}]}]}))
 
 (defn process-select*
-  [{{:keys [where optional filter bindings from]} :query
+  [{{:keys [where optional filter bindings graph]} :query
     :keys [results optional?] :as q}]
-  (let [from (resolve-from (or from (:from q)))
-        q* (assoc q :from from)
+  (let [graph (resolve-graph (or graph (:graph q)))
+        q* (assoc q :graph graph)
         patterns (q/resolve-patterns q where)
         flt (when filter (first (exp/compile-expression q* [filter])))
         vars (when bindings (exp/compile-expression-map q* bindings))
@@ -105,12 +105,12 @@
         ;; _ (prn :opt? optional?)
         res (if optional?
               (mapcat
-               #(if-let [r (q/select-join-from from patterns % flt vars)] r [%])
+               #(if-let [r (q/select-join-from graph patterns % flt vars)] r [%])
                results)
               (if (seq results)
-                (let [res (mapcat #(q/select-join-from from patterns % flt vars) results)]
+                (let [res (mapcat #(q/select-join-from graph patterns % flt vars) results)]
                   (when (seq res) res))
-                (q/select-join-from from patterns {} flt vars)))]
+                (q/select-join-from graph patterns {} flt vars)))]
     ;; (pprint res)
     ;; (prn "---")
     (reduce
@@ -165,7 +165,7 @@
      :base "http://thi.ng/owl"
      :select '[?p ?prj ?lic]
      :order '?prj
-     :from ds
+     :graph ds
      :where '[[?p "dc:creator" ?prj]
               [?prj "thi:started" ?s]
               [?prj "thi:hasLicense" ?lic]]
@@ -173,7 +173,7 @@
      :bind {'?title [:concat ?prj " (" ?s ")"]}}))
 
 (defn process-query
-  [{:keys [prefixes where filter bindings] :as q}]
+  [{:keys [prefixes] :as q}]
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
         q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)]
     (condp = type
