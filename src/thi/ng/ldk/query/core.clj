@@ -63,7 +63,7 @@
                     ['?s (:predicate api/RDF) '?pred]
                     ['?s (:object api/RDF) '?obj]
                     ['?s '?p '?o]]
-                bindings nil)]
+                bindings nil nil)]
        (->> res
             (group-by #(get % '?s))
             (map
@@ -85,13 +85,55 @@
   [{:keys [optional where from] :as q} res]
   (let [patterns (q/resolve-patterns q optional)]
     (mapcat
-     #(if-let [r (q/select-join-from (resolve-from from) patterns % nil)] r %) res)))
+     #(if-let [r (q/select-join-from (resolve-from from) patterns % nil nil)] r %)
+     res)))
 
 (defn process-bindings
   [binds res]
   (map (fn [r] (reduce inject-bind-expr r binds)) res))
 
+(comment
+  (def q
+    {:prefixes (api/prefix-map ds2)
+     :base "http://thi.ng/owl"
+     :select :*
+     :from ds2
+     :query [{:where '[[?p "foaf:givenName" ?gn]] :filter '[:not-exists [?p "foaf:surname" "'schmidt'"]] :optional [{:where '[[?p "thi:age" ?a]]}]}]}))
+
+(defn process-select*
+  [{{:keys [where optional filter bindings from]} :query
+    :keys [results optional?] :as q}]
+  (let [from (resolve-from (or from (:from q)))
+        patterns (q/resolve-patterns q where)
+        filter (when filter (first (exp/compile-expression q [filter])))
+        inject (when bindings
+                 (->> bindings
+                      (map (fn [[v exp]] [v (first (exp/compile-expression q [exp]))]))
+                      (into {})))
+        ;; _ (prn :patt patterns :flt filter :bind bindings)
+        ;; _ (prn :results results)
+        ;; _ (prn :opt? optional?)
+        res (if optional?
+              (mapcat #(if-let [r (q/select-join-from from patterns % filter inject)] r [%]) results)
+              (if (seq results)
+                (let [res (mapcat #(q/select-join-from from patterns % filter inject) results)]
+                  (when (seq res) res))
+                (q/select-join-from from patterns {} filter inject)))]
+    ;; (pprint res)
+    ;; (prn "---")
+    (reduce
+     (fn [q opt]
+       (process-select* (assoc q :query opt :optional? true)))
+     (assoc q :results res) optional)))
+
 (defn process-select
+  [spec]
+  (:results
+   (reduce
+    (fn [res q] (process-select* (assoc spec :query q)))
+    [] (:query spec))))
+
+(defn process-select-old
   [{:keys [select optional from limit] ord :order ord-a :order-asc ord-d :order-desc :as q}
    patterns filter bindings]
   (let [res (q/select-join-from (resolve-from from) patterns filter)
@@ -149,20 +191,9 @@
 (defn process-query
   [{:keys [prefixes where filter bindings] :as q}]
   (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
-        q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)
-        patterns (q/resolve-patterns q where)
-        filter (when filter (first (exp/compile-expression q [filter])))
-        bindings (when bindings
-                   (->> bindings
-                        (map (fn [[v exp]] [v (first (exp/compile-expression q [exp]))]))
-                        (into {})))]
+        q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)]
     (condp = type
-      :select (process-select q patterns filter bindings)
-      :ask (process-ask q patterns filter bindings)
-      :construct (process-construct q patterns filter bindings)
+      :select (process-select q)
+      :ask (process-ask q filter bindings)
+      :construct (process-construct q filter bindings)
       (prn "unimplemented"))))
-
-
-;; 0800 0852233
-;; LB 28242854
-;; 0800 443311
