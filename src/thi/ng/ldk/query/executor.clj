@@ -145,34 +145,47 @@
          (conj q [ds (cons patt patterns) r-binds])))
      q queries)))
 
+(defn inject-bind-expr
+  [res [var expr]]
+  (if-let [r (expr res)] (assoc res var r) res))
+
+(defn inject-bindings
+  [binds res]
+  (map (fn [r] (reduce inject-bind-expr r binds)) res))
+
 (defn- select-join*
-  [q [r & more] flt]
+  [q [r & more] flt inject]
   (if r
-    (lazy-seq (cons r (select-join* q more flt)))
+    (lazy-seq (cons r (select-join* q more flt inject)))
     (when-let [pq (peek q)]
       (let [[ds [[p bmap] & patterns] bindings] pq
-            res (select-with-bindings ds p bmap false)]
+            res (select-with-bindings ds p bmap false)
+            q (pop q)]
         (if (seq res)
           (let [bindings (->> res
                               (map #(unique-var-bindings? (merge bindings %)))
                               (filter (complement nil?)))]
             (if (seq patterns)
               (recur
-               (reduce #(queue-queries % patterns %2) (pop q) bindings)
-               clojure.lang.PersistentVector/EMPTY flt)
-              (recur (pop q) (if flt (filter flt bindings) bindings) flt)))
-          (recur (pop q) clojure.lang.PersistentVector/EMPTY flt))))))
+               (reduce #(queue-queries % patterns %2) q bindings)
+               clojure.lang.PersistentVector/EMPTY flt inject)
+              (let [bindings (if inject (inject-bindings inject bindings) bindings)
+                    bindings (if flt (filter flt bindings) bindings)]
+                (recur q bindings flt inject))))
+          (recur q clojure.lang.PersistentVector/EMPTY flt inject))))))
 
 (defn select-join
-  ([patterns] (select-join patterns {} nil))
-  ([patterns flt] (select-join patterns {} flt))
-  ([patterns bindings flt]
+  ([patterns] (select-join patterns {} nil nil))
+  ([patterns flt] (select-join patterns {} flt nil))
+  ([patterns flt inject] (select-join patterns {} flt inject))
+  ([patterns bindings flt inject]
      (select-join*
       (queue-queries clojure.lang.PersistentQueue/EMPTY patterns bindings)
-      clojure.lang.PersistentVector/EMPTY flt)))
+      clojure.lang.PersistentVector/EMPTY flt inject)))
 
 (defn select-join-from
-  ([ds patterns] (select-join-from ds patterns {} nil))
-  ([ds patterns flt] (select-join-from ds patterns {} flt))
-  ([ds patterns bindings flt]
-     (select-join (map #(cons ds %) (sort-patterns patterns)) bindings flt)))
+  ([ds patterns] (select-join-from ds patterns {} nil nil))
+  ([ds patterns flt] (select-join-from ds patterns {} flt nil))
+  ([ds patterns flt inject] (select-join-from ds patterns {} flt inject))
+  ([ds patterns bindings flt inject]
+     (select-join (map #(cons ds %) (sort-patterns patterns)) bindings flt inject)))
