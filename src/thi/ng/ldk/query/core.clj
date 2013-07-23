@@ -73,10 +73,6 @@
                       :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
             (into {})))))
 
-(defn inject-bind-expr
-  [res [var expr]]
-  (if-let [r (expr res)] (assoc res var r) res))
-
 (defn resolve-from
   [from]
   (if (satisfies? api/PModel from) from (apply api/get-model from)))
@@ -87,10 +83,6 @@
     (mapcat
      #(if-let [r (q/select-join-from (resolve-from from) patterns % nil nil)] r %)
      res)))
-
-(defn process-bindings
-  [binds res]
-  (map (fn [r] (reduce inject-bind-expr r binds)) res))
 
 (comment
   (def q
@@ -104,41 +96,33 @@
   [{{:keys [where optional filter bindings from]} :query
     :keys [results optional?] :as q}]
   (let [from (resolve-from (or from (:from q)))
+        q* (assoc q :from from)
         patterns (q/resolve-patterns q where)
-        filter (when filter (first (exp/compile-expression q [filter])))
-        inject (when bindings
-                 (->> bindings
-                      (map (fn [[v exp]] [v (first (exp/compile-expression q [exp]))]))
-                      (into {})))
-        ;; _ (prn :patt patterns :flt filter :bind bindings)
-        ;; _ (prn :results results)
+        flt (when filter (first (exp/compile-expression q* [filter])))
+        vars (when bindings (exp/compile-expression-map q* bindings))
+        ;; _ (prn :patt patterns :flt filter :bind inject)
+        ;; _ (prn :prev-res results)
         ;; _ (prn :opt? optional?)
         res (if optional?
-              (mapcat #(if-let [r (q/select-join-from from patterns % filter inject)] r [%]) results)
+              (mapcat
+               #(if-let [r (q/select-join-from from patterns % flt vars)] r [%])
+               results)
               (if (seq results)
-                (let [res (mapcat #(q/select-join-from from patterns % filter inject) results)]
+                (let [res (mapcat #(q/select-join-from from patterns % flt vars) results)]
                   (when (seq res) res))
-                (q/select-join-from from patterns {} filter inject)))]
+                (q/select-join-from from patterns {} flt vars)))]
     ;; (pprint res)
     ;; (prn "---")
     (reduce
-     (fn [q opt]
-       (process-select* (assoc q :query opt :optional? true)))
+     (fn [q opt] (process-select* (assoc q :query opt :optional? true)))
      (assoc q :results res) optional)))
 
 (defn process-select
-  [spec]
-  (:results
-   (reduce
-    (fn [res q] (process-select* (assoc spec :query q)))
-    [] (:query spec))))
-
-(defn process-select-old
-  [{:keys [select optional from limit] ord :order ord-a :order-asc ord-d :order-desc :as q}
-   patterns filter bindings]
-  (let [res (q/select-join-from (resolve-from from) patterns filter)
-        res (if optional (process-optional q res) res)
-        res (if bindings (process-bindings bindings res) res)
+  [{:keys [select bindings limit] ord :order ord-a :order-asc ord-d :order-desc :as spec}]
+  (let [{res :results} (reduce #(process-select* (assoc % :query %2)) spec (:query spec))
+        res (if bindings
+              (q/inject-bindings (exp/compile-expression-map spec bindings) res)
+              res)
         res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))
         res (if limit (take limit res) res)
         res (cond
@@ -149,13 +133,13 @@
     res))
 
 (defn process-ask
-  [q patterns filter bindings]
-  (when (seq (process-select (assoc q :limit 1) patterns filter bindings)) true))
+  [q]
+  (when (seq (process-select (assoc q :limit 1))) true))
 
 (defn process-construct
-  [{:keys [prefixes construct where into] :as q} patterns filter bindings]
+  [{:keys [construct into] :as q}]
   (let [targets (q/resolve-patterns q construct)
-        res (->> (process-select q patterns filter bindings)
+        res (->> (process-select q)
                  (mapcat
                   (fn [res]
                     (map
@@ -194,6 +178,6 @@
         q (if prefixes (update-in q [:prefixes] util/stringify-keys) q)]
     (condp = type
       :select (process-select q)
-      :ask (process-ask q filter bindings)
-      :construct (process-construct q filter bindings)
+      :ask (process-ask q)
+      :construct (process-construct q)
       (prn "unimplemented"))))
