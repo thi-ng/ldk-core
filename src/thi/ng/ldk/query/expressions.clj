@@ -71,6 +71,16 @@
 (defn exists
   [ds patterns] #(seq (q/select-join-from ds patterns % nil nil)))
 
+(defn not-exists
+  [ds patterns]
+  (let [f (exists ds patterns)] #(not (f %))))
+
+(defn minus
+  [ds patterns]
+  (let [f (exists ds patterns)]
+    (fn [bindings]
+      (not ((set (f bindings)) bindings)))))
+
 (defn value-isa?
   [n type] #(= type (nth (operand-value-type % n) 2)))
 
@@ -99,8 +109,7 @@
   [& args]
   (fn [bindings]
     (let [res (map #(first (operand-value-type bindings %)) args)]
-      (when (every? (complement nil?) res)
-        (apply str res)))))
+      (apply str res))))
 
 (defn in-set
   [x set]
@@ -154,8 +163,10 @@
   [q [op & args]] (exists (:from q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :not-exists
-  [q [op & args]]
-  (let [f (exists (:from q) (q/resolve-patterns q args))] #(not (f %))))
+  [q [op & args]] (not-exists (:from q) (q/resolve-patterns q args)))
+
+(defmethod compile-expr :minus
+  [q [op & args]] (minus (:from q) (q/resolve-patterns q args)))
 
 (defmethod compile-expr :blank?
   [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-expression q args))) :blank))
@@ -196,3 +207,9 @@
 (defn compile-expression
   [q spec]
   (reduce (fn [stack form] (conj stack (compile-expr q form))) [] spec))
+
+(defn compile-expression-map
+  [q specs]
+  (->> specs
+       (map (fn [[v exp]] [v (first (compile-expression q [exp]))]))
+       (into {})))
