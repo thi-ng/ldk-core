@@ -69,7 +69,7 @@
   [& conds] #(some (fn [f] (first (operand-value-type % f))) conds))
 
 (defn exists
-  [ds patterns] #(seq (q/select-join-from ds patterns % nil)))
+  [ds patterns] #(seq (q/select-join-from ds patterns % nil nil)))
 
 (defn value-isa?
   [n type] #(= type (nth (operand-value-type % n) 2)))
@@ -155,8 +155,7 @@
 
 (defmethod compile-expr :not-exists
   [q [op & args]]
-  (let [f (exists (:from q) (q/resolve-patterns q args))]
-    #(not (f %))))
+  (let [f (exists (:from q) (q/resolve-patterns q args))] #(not (f %))))
 
 (defmethod compile-expr :blank?
   [q [op & args]] (value-isa? (first (ensure-args :blank? 1 (compile-expression q args))) :blank))
