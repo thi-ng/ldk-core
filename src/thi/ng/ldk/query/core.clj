@@ -137,7 +137,7 @@
   (when (seq (process-select (assoc q :limit 1))) true))
 
 (defn process-construct
-  [{:keys [construct into] :as q}]
+  [{:keys [prefixes construct into] :as q}]
   (let [targets (q/resolve-patterns q construct)
         res (->> (process-select q)
                  (mapcat
