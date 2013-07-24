@@ -28,10 +28,10 @@
 
 (defn interpret-compare
   [op r]
-  (cond
-   (neg? r) (or (= < op) (= <= op))
-   (zero? r) (= = op)
-   :default (or (= > op) (= >= op))))
+  (if (not (zero? r))
+    (if (= not= op) true
+      (if (neg? r) (or (= < op) (= <= op)) (or (= > op) (= >= op))))
+    (= = op)))
 
 (defn compare-2*
   [op [va ta na] [vb tb nb]]
@@ -49,10 +49,7 @@
   [op a b]
   (fn [bindings]
     ;; (prn :c2 :ab a b)
-    (let [opa (operand-value-type bindings a)
-          opb (operand-value-type bindings b)]
-      ;; (prn :c2 :va va ta :vb vb tb)
-      (compare-2* op opa opb))))
+    (compare-2* op (operand-value-type bindings a) (operand-value-type bindings b))))
 
 (defn numeric-op-2
   [op a b]
