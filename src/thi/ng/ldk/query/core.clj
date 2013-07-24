@@ -123,13 +123,13 @@
         res (if bindings
               (q/inject-bindings (exp/compile-expression-map spec bindings) res)
               res)
-        res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))
-        res (if limit (take limit res) res)
         res (cond
              ord (order-asc ord res)
              ord-a (order-asc ord-a res)
              ord-d (order-desc ord-d res)
-             :default res)]
+             :default res)
+        res (if limit (take limit res) res)
+        res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))]
     res))
 
 (defn process-ask
