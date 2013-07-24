@@ -125,9 +125,11 @@
 ;; TODO add support for owl:sameAs aliases?
 (defn unique-var-bindings?
   [bindings]
-  (when (= (count bindings)
-           (count (set (concat (vals bindings)))))
-    bindings))
+  (comment
+    (when (= (count bindings)
+             (count (set (vals bindings))))
+      bindings))
+  bindings)
 
 (defn restrict-multi-bindings
   [p bmap bindings]
