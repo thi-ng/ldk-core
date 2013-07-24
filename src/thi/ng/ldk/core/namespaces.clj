@@ -1,6 +1,7 @@
 (ns thi.ng.ldk.core.namespaces
   (:require
-   [thi.ng.ldk.common.util :as util]))
+   [thi.ng.ldk.common.util :as util]
+   [clojure.string :as str]))
 
 (def default-namespaces
   {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -40,18 +41,32 @@
                  (resolve-pname prefixes x))
    :default x))
 
+(defn resolve-simple-pattern
+  [prefixes base [s p o :as t]]
+  (let [ss (resolve-item prefixes base s)
+        pp (if (= "a" p)
+             (str (default-namespaces "rdf") "type")
+             (resolve-item prefixes base p))
+        oo (resolve-item prefixes base o)]
+    (if (and ss pp oo)
+      [[ss pp oo]]
+      (throw (IllegalArgumentException. (str "couldn't resolve pattern: " t))))))
+
+(defn resolve-prop-path-pattern
+  [prefixes base [s p o :as t]]
+  (let [path (str/split p #"/")
+        vars (concat [s] (repeatedly (dec (count path)) #(symbol (str "?" (gensym)))))]
+    (->> (concat (interleave vars path) [o])
+         (util/successive-nth 3 2)
+         (mapcat #(resolve-simple-pattern prefixes base %)))))
+
 (defn resolve-patterns
   [prefixes base patterns]
-  (map
+  (mapcat
    (fn [[s p o :as t]]
-     (let [ss (resolve-item prefixes base s)
-           pp (if (= "a" p)
-               (str (default-namespaces "rdf") "type")
-               (resolve-item prefixes base p))
-           oo (resolve-item prefixes base o)]
-       (if (and ss pp oo)
-         [ss pp oo]
-         (throw (IllegalArgumentException. (str "couldn't resolve pattern: " t))))))
+     (if (and (string? p) (pos? (.indexOf ^String p "/")))
+       (resolve-prop-path-pattern prefixes base t)
+       (resolve-simple-pattern prefixes base t)))
    patterns))
 
 (def RDF

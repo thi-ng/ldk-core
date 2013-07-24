@@ -24,6 +24,19 @@
     (when (every? first seqs)
       (lazy-seq (step v-original-seqs)))))
 
+(defn successive-nth
+  "Returns a lazyseq of `n`-element vectors, each one containing a
+  successive elements of the original collection, which are `step`
+  items apart.
+
+      (successive-nth 3 2 [1 2 3 4 5 6 7])
+      ;=> ([1 2 3] [3 4 5] [5 6 7])"
+  [n step coll]
+  (lazy-seq
+    (let [s (take n coll)]
+      (if (= n (count s))
+        (cons (vec s) (successive-nth n step (drop step coll)))))))
+
 (defn filter-tree
   "Applies `f` to root coll and every of its (nested) elements. Returns
   a vector of items for which `f` returned a truthy value."
