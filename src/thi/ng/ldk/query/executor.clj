@@ -10,6 +10,8 @@
 
 (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
 
+(def var-name #(-> % name (subs 1)))
+
 (defn resolve-patterns
   [{:keys [prefixes base]} patterns]
   (if (or base prefixes)
