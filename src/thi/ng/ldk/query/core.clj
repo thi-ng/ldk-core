@@ -20,7 +20,7 @@
 (defn format-result-vars
   [results]
   (map
-   (fn [r] (into (sorted-map) (map (fn [[k v]] [(-> k name (subs 1) keyword) v]) r)))
+   (fn [r] (into (sorted-map) (map (fn [[k v]] [(-> k q/var-name keyword) v]) r)))
    results))
 
 (defn node-label-or-val
@@ -77,6 +77,11 @@
   [g]
   (if (satisfies? api/PModel g) g (apply api/get-model g)))
 
+(defn remove-generated-vars
+  [res]
+  (let [gen (filter #(.startsWith (name %) "?___q") (keys res))]
+    (apply dissoc res gen)))
+
 (defn process-optional
   [{:keys [optional where graph] :as q} res]
   (let [patterns (q/resolve-patterns q optional)]
@@ -129,7 +134,9 @@
              ord-d (order-desc ord-d res)
              :default res)
         res (if limit (take limit res) res)
-        res (if (or (nil? select) (= :* select)) res (filter-result-vars select res))]
+        res (if (or (nil? select) (= :* select))
+              (map remove-generated-vars res)
+              (filter-result-vars select res))]
     res))
 
 (defn process-ask

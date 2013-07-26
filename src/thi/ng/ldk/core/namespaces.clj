@@ -55,7 +55,7 @@
 (defn resolve-prop-path-pattern
   [prefixes base [s p o :as t]]
   (let [path (str/split p #"/")
-        vars (concat [s] (repeatedly (dec (count path)) #(symbol (str "?" (gensym)))))]
+        vars (concat [s] (repeatedly (dec (count path)) #(symbol (str "?" (gensym "___q")))))]
     (->> (concat (interleave vars path) [o])
          (util/successive-nth 3 2)
          (mapcat #(resolve-simple-pattern prefixes base %)))))
