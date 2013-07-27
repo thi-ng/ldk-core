@@ -25,6 +25,18 @@
             (str prefix (subs pname (inc idx))))))
       pname)))
 
+(defn iri-as-pname
+  [prefixes iri]
+  (loop [[[pre piri] & more] (seq prefixes)]
+    (when pre
+      (if (.startsWith iri piri)
+        (str pre ":" (subs iri (count piri)))
+        (recur more)))))
+
+(defn iri-as-pname-kw
+  [prefixes iri]
+  (keyword (iri-as-pname prefixes iri)))
+
 (defn resolve-map
   ([m] (resolve-map default-namespaces m))
   ([prefixes m]
