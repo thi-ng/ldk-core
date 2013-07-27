@@ -28,7 +28,7 @@
       (fn [vmap v]
         (if (nil? (t v))
           vmap
-          (update-in vmap [v] util/eset (t v)))) vmap vars))
+          (update-in vmap [v] util/set-conj (t v)))) vmap vars))
    {} results))
 
 (defn produce-queries-with-bound-vars
@@ -94,7 +94,7 @@
              (if include-triple?
                (fn [t]
                  (when (verify t)
-                   (-> {:triple t}
+                   (-> {:__triples [t]}
                        (inject-res-var t s 0)
                        (inject-res-var t p 1)
                        (inject-res-var t o 2))))
@@ -128,6 +128,7 @@
 (defn unique-var-bindings?
   [bindings]
   (comment
+    ;; TODO remove :__triple key before check
     (when (= (count bindings)
              (count (set (vals bindings))))
       bindings))
@@ -157,39 +158,47 @@
   [binds res]
   (map (fn [r] (reduce inject-bind-expr r binds)) res))
 
+(defn merge-bindings
+  [old new triples?]
+  (if triples?
+    (-> old
+        (merge (dissoc new :__triples))
+        (assoc :__triples (apply conj (:__triples old) (:__triples new))))
+    (merge old new)))
+
 (defn- select-join*
-  [q [r & more] flt inject]
+  [q [r & more] opts]
   (if r
-    (lazy-seq (cons r (select-join* q more flt inject)))
+    (lazy-seq (cons r (select-join* q more opts)))
     (when-let [pq (peek q)]
       (let [[ds [[p bmap] & patterns] bindings] pq
-            res (select-with-bindings ds p bmap false)
+            incl-triples? (:include-triples opts)
+            res (select-with-bindings ds p bmap incl-triples?)
             q (pop q)]
         (if (seq res)
           (let [bindings (->> res
-                              (map #(unique-var-bindings? (merge bindings %)))
+                              (map #(unique-var-bindings? (merge-bindings bindings % incl-triples?)))
                               (filter (complement nil?)))]
             (if (seq patterns)
               (recur
                (reduce #(queue-queries % patterns %2) q bindings)
-               clojure.lang.PersistentVector/EMPTY flt inject)
-              (let [bindings (if inject (inject-bindings inject bindings) bindings)
+               clojure.lang.PersistentVector/EMPTY opts)
+              (let [{flt :filter inject :inject} opts
+                    bindings (if inject (inject-bindings inject bindings) bindings)
                     bindings (if flt (filter flt bindings) bindings)]
-                (recur q bindings flt inject))))
-          (recur q clojure.lang.PersistentVector/EMPTY flt inject))))))
+                (recur q bindings opts))))
+          (recur q clojure.lang.PersistentVector/EMPTY opts))))))
 
 (defn select-join
-  ([patterns] (select-join patterns {} nil nil))
-  ([patterns flt] (select-join patterns {} flt nil))
-  ([patterns flt inject] (select-join patterns {} flt inject))
-  ([patterns bindings flt inject]
+  ([patterns] (select-join patterns {} nil))
+  ([patterns opts] (select-join patterns {} opts))
+  ([patterns bindings opts]
      (select-join*
       (queue-queries clojure.lang.PersistentQueue/EMPTY patterns bindings)
-      clojure.lang.PersistentVector/EMPTY flt inject)))
+      clojure.lang.PersistentVector/EMPTY opts)))
 
 (defn select-join-from
-  ([ds patterns] (select-join-from ds patterns {} nil nil))
-  ([ds patterns flt] (select-join-from ds patterns {} flt nil))
-  ([ds patterns flt inject] (select-join-from ds patterns {} flt inject))
-  ([ds patterns bindings flt inject]
-     (select-join (map #(cons ds %) (sort-patterns patterns)) bindings flt inject)))
+  ([ds patterns] (select-join-from ds patterns {} nil))
+  ([ds patterns opts] (select-join-from ds patterns {} opts))
+  ([ds patterns bindings opts]
+     (select-join (map #(cons ds %) (sort-patterns patterns)) bindings opts)))

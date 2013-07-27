@@ -43,7 +43,7 @@
                       ['?rule (:result ns/INF) '?res]]]
          (->> root
               (map-rdf-list ds api/label)
-              (map #(first (q/select-join-from ds r-query {'?rule %} nil nil)))
+              (map #(first (q/select-join-from ds r-query {'?rule %} nil)))
               (map (partial init-rule ds)))))))
 
 (defn infer

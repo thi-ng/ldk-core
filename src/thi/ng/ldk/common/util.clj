@@ -2,7 +2,21 @@
 
 (defn uuid [] (.toString (java.util.UUID/randomUUID)))
 
-(defn eset [e e2] (if (set? e) (conj e e2) #{e2}))
+(def set-conj (fnil conj #{}))
+
+(def vec-conj (fnil conj []))
+
+(def set-conj2* #(if (nil? %) %2 (if (set? %) (conj % %2) #{% %2})))
+
+(def vec-conj2* #(if (nil? %) %2 (if (vector? %) (conj % %2) [% %2])))
+
+(defn collect-set
+  [f coll] (reduce #(conj % (f %2)) #{} coll))
+
+(defn collect-indexed
+  [f f2 coll]
+  (let [keys (collect-set f coll)]
+    (zipmap keys (map f2 keys))))
 
 (defn cartesian-product
   "All the ways to take one item from each sequence
@@ -33,9 +47,9 @@
       ;=> ([1 2 3] [3 4 5] [5 6 7])"
   [n step coll]
   (lazy-seq
-    (let [s (take n coll)]
-      (if (= n (count s))
-        (cons (vec s) (successive-nth n step (drop step coll)))))))
+   (let [s (take n coll)]
+     (if (= n (count s))
+       (cons (vec s) (successive-nth n step (drop step coll)))))))
 
 (defn filter-tree
   "Applies `f` to root coll and every of its (nested) elements. Returns

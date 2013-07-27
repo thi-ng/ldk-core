@@ -8,6 +8,7 @@
     [executor :as q]
     [expressions :as exp]]
    [thi.ng.ldk.store.memory :as mem]
+   [com.stuartsierra.dependency :as dep]
    [clojure
     [set :as set]
     [pprint :refer [pprint]]]))
@@ -63,7 +64,7 @@
                     ['?s (:predicate api/RDF) '?pred]
                     ['?s (:object api/RDF) '?obj]
                     ['?s '?p '?o]]
-                bindings nil nil)]
+                bindings nil)]
        (->> res
             (group-by #(get % '?s))
             (map
@@ -86,7 +87,7 @@
   [{:keys [optional where graph] :as q} res]
   (let [patterns (q/resolve-patterns q optional)]
     (mapcat
-     #(if-let [r (q/select-join-from (resolve-graph graph) patterns % nil nil)] r %)
+     #(if-let [r (q/select-join-from (resolve-graph graph) patterns % nil)] r %)
      res)))
 
 (comment
@@ -99,7 +100,7 @@
 
 (defn process-select*
   [{{:keys [where optional filter bindings graph]} :query
-    :keys [results optional?] :as q}]
+    :keys [results optional? include-triples] :as q}]
   (let [graph (resolve-graph (or graph (:graph q)))
         q* (assoc q :graph graph)
         patterns (q/resolve-patterns q where)
@@ -108,14 +109,15 @@
         ;; _ (prn :patt patterns :flt filter :bind inject)
         ;; _ (prn :prev-res results)
         ;; _ (prn :opt? optional?)
+        opts {:filter flt :inject vars :include-triples include-triples}
         res (if optional?
               (mapcat
-               #(if-let [r (q/select-join-from graph patterns % flt vars)] r [%])
+               #(if-let [r (q/select-join-from graph patterns % opts)] r [%])
                results)
               (if (seq results)
-                (let [res (mapcat #(q/select-join-from graph patterns % flt vars) results)]
+                (let [res (mapcat #(q/select-join-from graph patterns % opts) results)]
                   (when (seq res) res))
-                (q/select-join-from graph patterns {} flt vars)))]
+                (q/select-join-from graph patterns {} opts)))]
     ;; (pprint res)
     ;; (prn "---")
     (reduce
@@ -188,3 +190,56 @@
       :ask (process-ask q)
       :construct (process-construct q)
       (prn "unimplemented"))))
+
+(defn result-triples
+  [results]
+  (mapcat :__triples (if (map? results) [results] results)))
+
+(defn triple-dependency-graph
+  [triples]
+  (reduce (fn [g [s _ o]] (dep/depend g o s)) (dep/graph) triples))
+
+(defn filter-roots
+  [g coll]
+  (filter #(not (seq (dep/immediate-dependencies g %))) coll))
+
+(defn pname-preds
+  [prefixes]
+  #(ns/iri-as-pname-kw prefixes (api/label %)))
+
+(defn make-tree
+  [index g tree subj objects]
+  (->> objects
+       (mapcat #(mapcat (fn [[p s*]] (when (= subj s*) [[p %]])) (index %)))
+       (reduce
+        (fn [tree [p o]]
+          (if-let [o* (seq (dep/immediate-dependents g o))]
+            (update-in tree [subj p] util/vec-conj2* (make-tree index g {} o o*))
+            (update-in tree [subj p] util/vec-conj2* o)))
+        tree)))
+
+;; TODO also allow for subj & obj or URI & literal transforms
+(defn triples-as-tree
+  [pred-fn triples]
+  (let [subjects (util/collect-set #(nth % 0) triples)
+        preds (util/collect-indexed #(nth % 1) pred-fn triples)
+        index (reduce
+               (fn [idx [s p o]] (update-in idx [o] util/set-conj [(preds p) s]))
+               {} triples)
+        g (triple-dependency-graph triples)]
+    (reduce
+     #(make-tree index g % %2 (dep/immediate-dependents g %2))
+     {} (filter-roots g subjects))))
+
+
+(comment
+  (q/triples-as-tree
+   identity
+   [[:a :p1 :b] [:a :p1 :g] [:a :p2 :c] [:b :p3 :d] [:d :p4 :e] [:b :p5 :f] [:g :p2 :h] [:g :p2 :hh]])
+
+  ;; =>
+  {:a
+   {:p1 [{:b {:p3 {:d {:p4 :e}}
+              :p5 :f}}
+         {:g {:p2 [:hh :h]}}]
+    :p2 :c}})

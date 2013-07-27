@@ -66,7 +66,7 @@
   [& conds] #(some (fn [f] (first (operand-value-type % f))) conds))
 
 (defn exists
-  [ds patterns] #(seq (q/select-join-from ds patterns % nil nil)))
+  [ds patterns] #(seq (q/select-join-from ds patterns % nil)))
 
 (defn not-exists
   [ds patterns]

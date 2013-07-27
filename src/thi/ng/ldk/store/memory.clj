@@ -48,9 +48,9 @@
           [this ph] (index-entity this p)
           [this oh] (index-entity this o)]
       (-> this
-          (update-in [:spo sh ph] util/eset oh)
-          (update-in [:pos ph oh] util/eset sh)
-          (update-in [:ops oh ph] util/eset sh))))
+          (update-in [:spo sh ph] util/set-conj oh)
+          (update-in [:pos ph oh] util/set-conj sh)
+          (update-in [:ops oh ph] util/set-conj sh))))
   (remove-statement [this s p o]
     (let [[sh ph oh] (map *hashimpl* [s p o])
           props (spo sh)
