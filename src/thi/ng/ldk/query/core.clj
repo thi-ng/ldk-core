@@ -221,15 +221,15 @@
 ;; TODO also allow for subj & obj or URI & literal transforms
 (defn triples-as-tree
   [pred-fn triples]
-  (let [subjects (util/collect-set #(nth % 0) triples)
-        preds (util/collect-indexed #(nth % 1) pred-fn triples)
+  (let [preds (util/collect-indexed #(% 1) pred-fn triples)
         index (reduce
                (fn [idx [s p o]] (update-in idx [o] util/set-conj [(preds p) s]))
                {} triples)
         g (triple-dependency-graph triples)]
-    (reduce
-     #(make-tree index g % %2 (dep/immediate-dependents g %2))
-     {} (filter-roots g subjects))))
+    (->> triples
+         (util/collect-set #(% 0))
+         (filter-roots g)
+         (reduce #(make-tree index g % %2 (dep/immediate-dependents g %2)) {}))))
 
 
 (comment
