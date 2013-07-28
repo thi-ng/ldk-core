@@ -14,9 +14,13 @@
     [pprint :refer [pprint]]]))
 
 (defn filter-result-vars
-  [vars res]
-  (let [vars (if (coll? vars) vars [vars])]
-    (map #(select-keys % vars) res)))
+  ([vars res] (filter-result-vars vars res false))
+  ([vars res triples?]
+     (let [vars (if (coll? vars) vars [vars])
+           sel (if triples?
+                 #(-> % (select-keys vars) (assoc :__triples (:__triples %)))
+                 #(select-keys % vars))]
+       (map sel res))))
 
 (defn format-result-vars
   [results]
@@ -125,7 +129,9 @@
      (assoc q :results res) optional)))
 
 (defn process-select
-  [{:keys [select bindings limit] ord :order ord-a :order-asc ord-d :order-desc :as spec}]
+  [{:keys [select bindings limit include-triples]
+    ord :order ord-a :order-asc ord-d :order-desc
+    :as spec}]
   (let [{res :results} (reduce #(process-select* (assoc % :query %2)) spec (:query spec))
         res (if bindings
               (q/inject-bindings (exp/compile-expression-map spec bindings) res)
@@ -138,7 +144,7 @@
         res (if limit (take limit res) res)
         res (if (or (nil? select) (= :* select))
               (map remove-generated-vars res)
-              (filter-result-vars select res))]
+              (filter-result-vars select res include-triples))]
     res))
 
 (defn process-ask
