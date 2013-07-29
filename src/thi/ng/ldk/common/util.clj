@@ -11,12 +11,12 @@
 (def vec-conj2* #(if (nil? %) %2 (if (vector? %) (conj % %2) [% %2])))
 
 (defn collect-set
-  [f coll] (reduce #(conj % (f %2)) #{} coll))
+  [f coll] (->> coll (map f) (into #{})))
 
 (defn collect-indexed
   [f f2 coll]
   (let [keys (collect-set f coll)]
-    (zipmap keys (map f2 keys))))
+    (zipmap keys (if (= f2 identity) keys (map f2 keys)))))
 
 (defn cartesian-product
   "All the ways to take one item from each sequence
