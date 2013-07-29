@@ -4,8 +4,11 @@
    [thi.ng.ldk.common.util :as util]))
 
 (defprotocol PModel
-  (add-statement [this s p o] [this g s p o])
-  (remove-statement [this s p o] [this g s p o])
+  (add-statement [this s] [this g s])
+  (add-many [this statements] [this g statements])
+  (remove-statement [this s] [this g s])
+  (remove-many [this statements] [this g statements])
+  (update-statement [this s1 s2] [this g s1 s2])
   (select [this] [this s p o] [this g s p o])
   (subjects [this])
   (predicates [this])
@@ -14,6 +17,7 @@
   (predicate? [this x])
   (object? [this x])
   (indexed? [this x])
+  (remove-subject [this s] [this g s])
   (add-prefix [this prefix uri] [this prefix-map])
   (prefix-map [this])
   (union [this others])
@@ -119,14 +123,6 @@
    {} [:type :statement :subject :predicate :object
        :alt :bag :list :seq :first :rest :nil]))
 
-(defn add-many
-  [store & statements]
-  (reduce #(apply add-statement % %2) store statements))
-
-(defn remove-many
-  [store & statements]
-  (reduce #(apply remove-statement % %2) store statements))
-
 (defn rdf-container-triples
   ([c-type coll] (rdf-container-triples c-type (make-blank-node) coll))
   ([c-type node coll]
@@ -152,7 +148,7 @@
   ([store c-type coll]
      (add-container store c-type (make-blank-node) coll))
   ([store c-type node coll]
-     (apply add-many store (rdf-container-triples c-type node coll))))
+     (add-many store (rdf-container-triples c-type node coll))))
 
 (defn add-bag
   ([store coll] (add-container store :bag coll))
@@ -169,18 +165,21 @@
 (defn add-list
   ([store coll] (add-list store (make-blank-node) coll))
   ([store node coll]
-     (apply add-many store (rdf-list-triples node coll))))
+     (add-many store (rdf-list-triples node coll))))
 
 ;; TODO fail if node already exists
 (defn add-reified-statement
   ([store triple] (add-reified-statement store (make-blank-node) triple))
   ([store node [s p o] & extra]
-     (let [store (-> store
-                     (add-statement node (:type RDF) (:statement RDF))
-                     (add-statement node (:subject RDF) s)
-                     (add-statement node (:predicate RDF) p)
-                     (add-statement node (:object RDF) o))]
-       (apply add-many store (map #(cons node %) extra)))))
+     (let [store (add-many
+                  store (map #(cons node %)
+                             [[(:type RDF) (:statement RDF)]
+                              [(:subject RDF) s]
+                              [(:predicate RDF) p]
+                              [(:object RDF) o]]))]
+       (if (seq extra)
+         (add-many store (map #(cons node %) extra))
+         store))))
 
 (defn add-reified-group
   ([store triples extra] (add-reified-group store (make-blank-node) triples extra))
@@ -191,7 +190,9 @@
                              [(add-reified-statement ds n t) (conj nodes n)]))
                          [store []] triples)
            store (add-bag store node coll)]
-       (apply add-many store (map #(cons node %) extra)))))
+       (if (seq extra)
+         (add-many store (map #(cons node %) extra))
+         store))))
 
 (defn rdf-list-seq
   [store node]

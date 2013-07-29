@@ -22,7 +22,7 @@
         var? #(if (.startsWith ^String (api/label %) "?") (symbol (api/label %)) %)]
     [(var? ?s) (var? ?p) (var? ?o)]))
 
-(defn map-rdf-list [ds f id] (map f (api/rdf-list-seq ds id)))
+(defn map-rdf-list [ds f head] (map f (api/rdf-list-seq ds head)))
 
 (defn init-rule
   [ds {:syms [?name ?match ?res]}]
@@ -33,7 +33,7 @@
 
 (defn init-rules-from-model
   ([uri]
-     (let [ds (apply api/add-many (mem/make-store) (ttl/parse-triples uri))
+     (let [ds (api/add-many (mem/make-store) (ttl/parse-triples uri))
            base (ffirst (api/select ds nil (:type ns/RDF) (:ruleset ns/INF)))]
        (init-rules-from-model ds base)))
   ([ds id]
@@ -71,14 +71,19 @@
   produces no further results, returns 2-element vector of updated
   `ds` & inferred triples."
   ([ds rule targets]
-     (infer-rule ds rule targets #{}))
-  ([ds rule targets inf]
+     (infer-rule ds nil rule targets #{}))
+  ([ds g rule targets]
+     (infer-rule ds g rule targets #{}))
+  ([ds g rule targets inf]
      (let [new-inf (->> inf
                         (set/difference (infer ds rule targets))
-                        (filter #(nil? (seq (apply api/select ds (api/remove-context %))))))]
+                        (filter #(nil? (seq (apply api/select ds %)))))]
        (if (seq new-inf)
          (recur
-          (apply api/add-many ds new-inf)
+          (if g
+            (api/add-many ds g new-inf)
+            (api/add-many ds new-inf))
+          g
           rule targets
           (set/union inf new-inf))
          [ds (map api/remove-context inf)]))))
@@ -92,17 +97,16 @@
   ([ds rules num-passes]
      (infer-rules ds nil rules num-passes))
   ([ds g rules num-passes]
-     (let [rules (if g (map (fn [[id r t]] [id r (map #(cons g %) t)]) rules) rules)]
-       (loop [state [ds {}] i num-passes]
-         (if (zero? i) state
-             (recur
-              (reduce
-               (fn [[ds inf] [id rule targets]]
-                 (let [[ds new-inf] (infer-rule ds rule targets)
-                       inf (update-in inf [id] #(into (or % #{}) new-inf))]
-                   [ds inf]))
-               state rules)
-              (dec i)))))))
+     (loop [state [ds {}] i num-passes]
+       (if (zero? i) state
+           (recur
+            (reduce
+             (fn [[ds inf] [id rule targets]]
+               (let [[ds new-inf] (infer-rule ds g rule targets)
+                     inf (update-in inf [id] #(into (or % #{}) new-inf))]
+                 [ds inf]))
+             state rules)
+            (dec i))))))
 
 (defn infer-with-annotations
   "Applies infer-rule to the given rule and then reifies inferred

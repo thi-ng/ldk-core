@@ -43,7 +43,7 @@
 
 (defrecord MemStore [ns idx spo pos ops]
   api/PModel
-  (add-statement [this s p o]
+  (add-statement [this [s p o]]
     (let [[this sh] (index-entity this s)
           [this ph] (index-entity this p)
           [this oh] (index-entity this o)]
@@ -51,7 +51,9 @@
           (update-in [:spo sh ph] util/set-conj oh)
           (update-in [:pos ph oh] util/set-conj sh)
           (update-in [:ops oh ph] util/set-conj sh))))
-  (remove-statement [this s p o]
+  (add-many [this statements]
+    (reduce api/add-statement this statements))
+  (remove-statement [this [s p o]]
     (let [[sh ph oh] (map *hashimpl* [s p o])
           props (spo sh)
           obj (get props ph)]
@@ -64,6 +66,12 @@
             (prune-entity-index ph)
             (prune-entity-index oh))
         this)))
+  (remove-many [this statements]
+    (reduce api/remove-statement this statements))
+  (update-statement [this s1 s2]
+    (api/add-statement (api/remove-statement this s1) s2))
+  (remove-subject [this s]
+    (api/remove-many this (api/select this s nil nil)))
   (subject? [this x]
     (let [h (*hashimpl* x)] (when (spo h) (idx h))))
   (predicate? [this x]
@@ -116,37 +124,50 @@
     (reduce
      (fn [this m]
        (reduce
-        (fn [this [s p o]] (api/add-statement this s p o))
+        (fn [this s] (api/add-statement this s))
         (update-in this [:ns] merge (api/prefix-map m))
         (api/select m nil nil nil)))
      this (if (satisfies? api/PModel others) [others] others)))
   (intersection [this others]
     (let [others (if (satisfies? api/PModel others) [others] others)]
       (reduce
-       (fn [this [s p o]]
+       (fn [this [s p o :as t]]
          (if (every? #(seq (api/select % s p o)) others)
            this
-           (api/remove-statement this s p o)))
+           (api/remove-statement this t)))
        this (api/select this nil nil nil))))
   (difference [this others]
     (let [others (if (satisfies? api/PModel others) [others] others)]
       (reduce
-       (fn [this [s p o]]
+       (fn [this [s p o :as t]]
          (if (some #(seq (api/select % s p o)) others)
-           (api/remove-statement this s p o)
+           (api/remove-statement this t)
            this))
        this (api/select this nil nil nil)))))
 
 (defrecord MemDataset [models]
   api/PModel
-  (add-statement [this s p o]
-    (api/add-statement this :default s p o))
-  (add-statement [this g s p o]
-    (update-in this [:models g] api/add-statement s p o))
-  (remove-statement [this s p o]
-    (api/remove-statement this :default s p o))
-  (remove-statement [this g s p o]
-    (update-in this [:models g] api/remove-statement s p o))
+  (add-statement [this s]
+    (api/add-statement this :default s))
+  (add-statement [this g s]
+    (update-in this [:models g] api/add-statement s))
+  (add-many [this statements]
+    (api/add-many this :default statements))
+  (add-many [this g statements]
+    (update-in this [:models g] api/add-many statements))
+  (remove-statement [this s]
+    (api/remove-statement this :default s))
+  (remove-statement [this g s]
+    (update-in this [:models g] api/remove-statement s))
+  (remove-many [this statements]
+    (api/remove-many this :default statements))
+  (remove-many [this g statements]
+    (update-in this [:models g] api/remove-many statements))
+  ;; TODO add remove-subject
+  (remove-subject [this s]
+    (api/remove-subject this :default s))
+  (remove-subject [this g s]
+    (update-in this [:models g] api/remove-subject s))
   (select [this]
     (api/select this nil nil nil))
   (select [this s p o]
@@ -190,8 +211,8 @@
 (defn init-store-from-model
   [f]
   (let [triples (ttl/parse-triples-with-meta f)]
-    (apply api/add-many (make-store (:prefixes (meta (first triples)))) triples)))
+    (api/add-many (make-store (:prefixes (meta (first triples)))) triples)))
 
 (defn select-from
   [[s p o] triples]
-  (api/select (apply api/add-many (make-store) triples) s p o))
+  (api/select (api/add-many (make-store) triples) s p o))
