@@ -10,7 +10,11 @@
 
 (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
 
+(def blank-var? #(and (symbol? %) (re-matches #"^\?_.*" (name %))))
+
 (def var-name #(-> % name (subs 1)))
+
+(def var-name-kw #(-> % name (subs 1) keyword))
 
 (defn resolve-patterns
   [{:keys [prefixes base]} patterns]

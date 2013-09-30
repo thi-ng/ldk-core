@@ -62,6 +62,16 @@
                 :default acc))]
     (reduce walk [] root)))
 
+(defn bisect
+  ([f coll]
+     (let [[m n] (reduce
+                  (fn [[m n] v] (if (f v) [(conj! m v) n] [m (conj! n v)]))
+                  [(transient []) (transient [])] coll)]
+       [(persistent! m) (persistent! n)]))
+  ([f f2 coll]
+     (let [[m n] (bisect f coll)]
+       [(f2 m) (f2 n)])))
+
 (defn unwrap [s] (subs s 1 (dec (count s))))
 
 (defn wrap [a b s] (str a s b))
