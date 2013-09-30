@@ -484,7 +484,8 @@
     [^PushbackReader in state]
     ;; (prn :lit-content)
     (let [src (str (:literal state) (read-until-literal in (str (:lit-terminator state))))
-          [lit] (re-matches ((:lit-regex state) re-patterns) src)
+          ;;[lit] (re-matches ((:lit-regex state) re-patterns) src) ;; FIXME broken for long strings
+          lit src
           lit (unescape lit)
           n (peek in)]
       (if lit
@@ -527,7 +528,7 @@
     (if (next-char? in \^)
       (let [[iri state] (if (= (peek in) \<) (read-iri-ref in state) (read-pname in state))]
         (if iri
-          (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil (api/label iri))))]
+          (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil iri)))]
             ((:state state) in state))
           state))))
 
