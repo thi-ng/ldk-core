@@ -133,9 +133,9 @@
     ([id] (NodeBlank. id)))
 
   (defn make-literal
-    ([label] (NodeLiteral. (str label) nil nil))
-    ([label lang] (NodeLiteral. (str label) lang nil))
-    ([label lang type] (NodeLiteral. (str label) lang type)))
+    ([val] (NodeLiteral. (str val) nil nil))
+    ([val lang] (NodeLiteral. (str val) lang nil))
+    ([val lang type] (NodeLiteral. (str val) lang (if (satisfies? PNode type) (label type) type))))
 
   (defn as-node
     [x]
@@ -149,82 +149,11 @@
      (string? x) (make-literal x)
      :default nil))
 #+END_SRC
-*** XSD type conversion                                                 :Fix:
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
-  (declare XSD)
-
-  ,#+clj (def xsd-factory ^:const (javax.xml.datatype.DatatypeFactory/newInstance))
-
-  (defmulti literal-value #(datatype %))
-
-  (defmethod literal-value (:integer XSD)
-    [x] (try
-          ,#+clj  (Integer/parseInt (label x))
-          ,#+cljs (js/parseInt (label x))
-          (catch Exception e)))
-
-  (defmethod literal-value (:float XSD)
-    [x]
-    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
-    ,#+cljs (js/parseFloat (label x)))
-
-  (defmethod literal-value (:double XSD)
-    [x]
-    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
-    ,#+cljs (js/parseFloat (label x)))
-
-  (defmethod literal-value (:boolean XSD)
-    [x]
-    ,#+clj  (try (Boolean/parseBoolean (label x)) (catch Exception e))
-    ,#+cljs (let [l (label x)]
-             (cond
-              (or (= "true" l) (= "TRUE" l)) true
-              (or (= "false" l) (= "FALSE" l)) false
-              :default nil)))
-
-  (defmethod literal-value (:string XSD)
-    [x] (label x))
-
-  (defmethod literal-value nil
-    [x] (label x))
-
-  (defmethod literal-value (:date-time XSD)
-    [x]
-    ,#+clj (try (.newXMLGregorianCalendar xsd-factory ^String (label x)) (catch Exception e)))
-
-  ,#+clj
-  (defn xsd-type
-    [x]
-    (cond
-     (instance? String x) (:string XSD)
-     (instance? Long x) (:long XSD)
-     (instance? Double x) (:float XSD)
-     (instance? Integer x) (:int XSD)
-     (instance? Byte x) (:byte XSD)
-     (instance? Short x) (:short XSD)
-     (instance? Float x) (:float XSD)
-     (instance? Boolean x) (:boolean XSD)
-     (instance? clojure.lang.Ratio x) (:decimal XSD)
-     :default nil))
-
-  ;; TODO fix
-  ,#+cljs
-  (defn xsd-type
-    [x]
-    (cond
-     (goog/isString x) (:string XSD)
-     (instance? Long x) (:long XSD)
-     (instance? Double x) (:float XSD)
-     (instance? Integer x) (:int XSD)
-     (instance? Byte x) (:byte XSD)
-     (instance? Short x) (:short XSD)
-     (instance? Float x) (:float XSD)
-     (or (x == true) (x == false)) (:boolean XSD)
-     :default nil))
-#+END_SRC
 *** RDF namespaces handling & resolution
 **** Namespace resolution
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (declare literal-value)
+
   (defn resolve-iri
     [^String base ^String iri] (if (neg? (.indexOf iri ":")) (str base iri) iri))
 
@@ -275,7 +204,8 @@
            (label %)))
        %))
 #+END_SRC
-**** TODO add more standard vocabs
+**** Default prefixes
+***** TODO add more standard vocabs
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
 (def ^:const default-prefixes
   {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -385,6 +315,77 @@
           :unsigned-byte]
          (map XSD)
          (set)))
+#+END_SRC
+**** XSD type conversion                                                :Fix:
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  ,#+clj (def xsd-factory ^:const (javax.xml.datatype.DatatypeFactory/newInstance))
+
+  (defmulti literal-value #(datatype %))
+
+  (defmethod literal-value (label (:integer XSD))
+    [x] (try
+          ,#+clj  (Integer/parseInt (label x))
+          ,#+cljs (js/parseInt (label x))
+          (catch Exception e)))
+
+  (defmethod literal-value (label (:float XSD))
+    [x]
+    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
+    ,#+cljs (js/parseFloat (label x)))
+
+  (defmethod literal-value (label (:double XSD))
+    [x]
+    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
+    ,#+cljs (js/parseFloat (label x)))
+
+  (defmethod literal-value (label (:boolean XSD))
+    [x]
+    ,#+clj  (try (Boolean/parseBoolean (label x)) (catch Exception e))
+    ,#+cljs (let [l (label x)]
+             (cond
+              (or (= "true" l) (= "TRUE" l)) true
+              (or (= "false" l) (= "FALSE" l)) false
+              :default nil)))
+
+  (defmethod literal-value (label (:string XSD))
+    [x] (label x))
+
+  (defmethod literal-value nil
+    [x] (label x))
+
+  (defmethod literal-value (label (:date-time XSD))
+    [x]
+    ,#+clj (try (.newXMLGregorianCalendar xsd-factory ^String (label x)) (catch Exception e)))
+
+  ,#+clj
+  (defn xsd-type
+    [x]
+    (cond
+     (instance? String x) (:string XSD)
+     (instance? Long x) (:long XSD)
+     (instance? Double x) (:float XSD)
+     (instance? Integer x) (:int XSD)
+     (instance? Byte x) (:byte XSD)
+     (instance? Short x) (:short XSD)
+     (instance? Float x) (:float XSD)
+     (instance? Boolean x) (:boolean XSD)
+     (instance? clojure.lang.Ratio x) (:decimal XSD)
+     :default nil))
+
+  ;; TODO fix
+  ,#+cljs
+  (defn xsd-type
+    [x]
+    (cond
+     (goog/isString x) (:string XSD)
+     (instance? Long x) (:long XSD)
+     (instance? Double x) (:float XSD)
+     (instance? Integer x) (:int XSD)
+     (instance? Byte x) (:byte XSD)
+     (instance? Short x) (:short XSD)
+     (instance? Float x) (:float XSD)
+     (or (x == true) (x == false)) (:boolean XSD)
+     :default nil))
 #+END_SRC
 *** Triple pattern resolution
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
