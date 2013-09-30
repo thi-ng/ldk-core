@@ -1,0 +1,14 @@
+#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
+#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
+#+EXPORT_EXCLUDE_TAGS: noexport
+
+* Namespace: thi.ng.ldk.query
+
+** core
+** executor
+** expressions
+** resultio
+#+INCLUDE: "query/core.org" :minlevel 3
+#+INCLUDE: "query/executor.org" :minlevel 3
+#+INCLUDE: "query/expressions.org" :minlevel 3
+#+INCLUDE: "query/resultio.org" :minlevel 3

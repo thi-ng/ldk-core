@@ -1,0 +1,28 @@
+#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
+#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
+#+EXPORT_EXCLUDE_TAGS: noexport
+
+* Namespace: thi.ng.ldk.common
+
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+  (ns thi.ng.ldk.common.util)
+#+END_SRC
+
+** Variables
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+  (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
+
+  (def blank-var? #(and (symbol? %) (re-matches #"^\?_.*" (name %))))
+
+  (def var-name #(-> % name (subs 1)))
+
+  (def var-name-kw #(-> % name (subs 1) keyword))
+#+END_SRC
+** UUID generation
+*** TODO add CLJS version
+[[file:/Library/Java/JavaVirtualMachines/jdk1.7.0_17.jdk/Contents/Home/src.zip:java/util/UUID.java]]
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+  (defn uuid []
+    #+clj (.toString (java.util.UUID/randomUUID))
+    #+cljs nil)
+#+END_SRC

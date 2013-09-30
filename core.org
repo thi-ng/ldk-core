@@ -1,0 +1,579 @@
+#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
+#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
+#+EXPORT_EXCLUDE_TAGS: noexport
+
+* Namespace: thi.ng.ldk.core
+
+** Core API
+*** Namespace declaration
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (ns thi.ng.ldk.core.api
+    (:require
+     [thi.ng.ldk.common.util :as util]
+     [thi.ng.common.data.core :as d]
+     [thi.ng.common.error :as err]
+     [clojure.string :as str]))
+#+END_SRC
+*** Protocol definitions
+**** PModel
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PModel
+    (add-statement [this s] [this g s])
+    (add-many [this statements] [this g statements])
+    (remove-statement [this s] [this g s])
+    (remove-many [this statements] [this g statements])
+    (update-statement [this s1 s2] [this g s1 s2])
+    (select [this] [this s p o] [this g s p o])
+    (subjects [this])
+    (predicates [this])
+    (objects [this])
+    (subject? [this x])
+    (predicate? [this x])
+    (object? [this x])
+    (indexed? [this x])
+    (remove-subject [this s] [this g s])
+    (add-prefix [this prefix uri] [this prefix-map])
+    (prefix-map [this])
+    (union [this others])
+    (intersection [this others])
+    (difference [this others]))
+#+END_SRC
+**** PDataset
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PDataset
+    (remove-model [this id])
+    (update-model [this id f])
+    (get-model [this id]))
+#+END_SRC
+**** PIndexable
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PIndexable
+    (index-value [this]))
+#+END_SRC
+**** PNode
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PNode
+    (label [this])
+    (blank? [this])
+    (literal? [this])
+    (uri? [this]))
+#+END_SRC
+**** PLiteral
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PLiteral
+    (plain-literal? [this])
+    (language [this])
+    (datatype [this]))
+#+END_SRC
+**** PResource
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defprotocol PResource
+    (ns-uri [this])
+    (local-uri [this]))
+#+END_SRC
+*** RDF graph node types
+**** URIs
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defrecord NodeURI [uri]
+    PNode
+    (blank? [this] false)
+    (literal? [this] false)
+    (uri? [this] true)
+    (label [this] (.toString uri))
+    PIndexable
+    (index-value [this] (.toString uri)))
+#+END_SRC
+**** RDF Literals
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defrecord NodeLiteral [label ^String lang type]
+    PNode
+    (blank? [this] false)
+    (literal? [this] true)
+    (uri? [this] false)
+    (label [this] label)
+    PLiteral
+    (plain-literal? [this]
+      (and (nil? type) (nil? lang)))
+    (language [this] lang)
+    (datatype [this] type)
+    PIndexable
+    (index-value [this]
+      (if lang
+        (str label "@" lang)
+        (if type
+          (str label "^^<" type ">")
+          label))))
+#+END_SRC
+**** RDF Blanknodes
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defrecord NodeBlank [id]
+    PNode
+    (blank? [this] true)
+    (uri? [this] false)
+    (literal? [this] false)
+    (label [this] id)
+    PIndexable
+    (index-value [this] id))
+#+END_SRC
+**** Protocol support for built-in types
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (extend-protocol PIndexable
+    String
+    (index-value [this] this)
+    nil
+    (index-value [this] this))
+#+END_SRC
+*** Node constructors / coercion
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn make-resource
+    [uri] (NodeURI. uri))
+
+  (defn make-blank-node
+    ([] (NodeBlank. (util/uuid)))
+    ([id] (NodeBlank. id)))
+
+  (defn make-literal
+    ([label] (NodeLiteral. (str label) nil nil))
+    ([label lang] (NodeLiteral. (str label) lang nil))
+    ([label lang type] (NodeLiteral. (str label) lang type)))
+
+  (defn as-node
+    [x]
+    (cond
+     (satisfies? PNode x) x
+     (map? x) (cond
+               (:uri x)   (map->NodeURI x)
+               (:id x)    (map->NodeBlank x)
+               (:label x) (map->NodeLiteral x)
+               :default nil)
+     (string? x) (make-literal x)
+     :default nil))
+#+END_SRC
+*** XSD type conversion                                                 :Fix:
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (declare XSD)
+
+  ,#+clj (def xsd-factory ^:const (javax.xml.datatype.DatatypeFactory/newInstance))
+
+  (defmulti literal-value #(datatype %))
+
+  (defmethod literal-value (:integer XSD)
+    [x] (try
+          ,#+clj  (Integer/parseInt (label x))
+          ,#+cljs (js/parseInt (label x))
+          (catch Exception e)))
+
+  (defmethod literal-value (:float XSD)
+    [x]
+    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
+    ,#+cljs (js/parseFloat (label x)))
+
+  (defmethod literal-value (:double XSD)
+    [x]
+    ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
+    ,#+cljs (js/parseFloat (label x)))
+
+  (defmethod literal-value (:boolean XSD)
+    [x]
+    ,#+clj  (try (Boolean/parseBoolean (label x)) (catch Exception e))
+    ,#+cljs (let [l (label x)]
+             (cond
+              (or (= "true" l) (= "TRUE" l)) true
+              (or (= "false" l) (= "FALSE" l)) false
+              :default nil)))
+
+  (defmethod literal-value (:string XSD)
+    [x] (label x))
+
+  (defmethod literal-value nil
+    [x] (label x))
+
+  (defmethod literal-value (:date-time XSD)
+    [x]
+    ,#+clj (try (.newXMLGregorianCalendar xsd-factory ^String (label x)) (catch Exception e)))
+
+  ,#+clj
+  (defn xsd-type
+    [x]
+    (cond
+     (instance? String x) (:string XSD)
+     (instance? Long x) (:long XSD)
+     (instance? Double x) (:float XSD)
+     (instance? Integer x) (:int XSD)
+     (instance? Byte x) (:byte XSD)
+     (instance? Short x) (:short XSD)
+     (instance? Float x) (:float XSD)
+     (instance? Boolean x) (:boolean XSD)
+     (instance? clojure.lang.Ratio x) (:decimal XSD)
+     :default nil))
+
+  ;; TODO fix
+  ,#+cljs
+  (defn xsd-type
+    [x]
+    (cond
+     (goog/isString x) (:string XSD)
+     (instance? Long x) (:long XSD)
+     (instance? Double x) (:float XSD)
+     (instance? Integer x) (:int XSD)
+     (instance? Byte x) (:byte XSD)
+     (instance? Short x) (:short XSD)
+     (instance? Float x) (:float XSD)
+     (or (x == true) (x == false)) (:boolean XSD)
+     :default nil))
+#+END_SRC
+*** RDF namespaces handling & resolution
+**** Namespace resolution
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn resolve-iri
+    [^String base ^String iri] (if (neg? (.indexOf iri ":")) (str base iri) iri))
+
+  (defn resolve-pname
+    [prefixes ^String pname]
+    (when pname
+      (if (string? pname)
+        (let [idx (.indexOf pname ":")]
+          (when (>= idx 0)
+            (when-let [prefix (get prefixes (subs pname 0 idx))]
+              (str prefix (subs pname (inc idx))))))
+        pname)))
+
+  (defn resolve-pname-as-node
+    [prefixes ^String pname]
+    (make-resource (resolve-pname prefixes pname)))
+
+  (defn iri-as-pname
+    [prefixes ^String iri]
+    (loop [[[pre piri] & more] (seq prefixes)]
+      (when pre
+        (if (.startsWith iri ^String piri)
+          (str pre ":" (subs iri (count piri)))
+          (recur more)))))
+
+  (defn iri-as-pname-kw
+    [prefixes iri]
+    (keyword (iri-as-pname prefixes iri)))
+
+  (defn pname-iri
+    [prefixes]
+    #(if-let [pname (iri-as-pname prefixes (label %))]
+       pname (label %)))
+
+  (defn pname-iri-kw
+    [prefixes]
+    #(if-let [pname (iri-as-pname-kw prefixes (label %))]
+       pname (label %)))
+
+  (defn pname-iri-or-value
+    [prefixes]
+    #(if (satisfies? PNode %)
+       (if (uri? %)
+         (if-let [pname (iri-as-pname prefixes (label %))]
+           pname (label %))
+         (if (literal? %)
+           (literal-value %)
+           (label %)))
+       %))
+#+END_SRC
+**** TODO add more standard vocabs
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+(def ^:const default-prefixes
+  {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
+   "owl" "http://www.w3.org/2002/07/owl#"
+   "foaf" "http://xmlns.com/foaf/0.1/"
+   "xsd" "http://www.w3.org/2001/XMLSchema#"
+   "inf" "http://owl.thi.ng/inference#"
+   })
+#+END_SRC
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn resolve-pname-map
+    ([m] (resolve-pname-map default-prefixes m))
+    ([prefixes m]
+       (reduce-kv (fn [m k v] (assoc m k (resolve-pname-as-node prefixes v))) {} m)))
+#+END_SRC
+**** RDF syntax
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (def ^:const RDF
+    (resolve-pname-map
+     {:type "rdf:type"
+      :statement "rdf:Statement"
+      :subject "rdf:subject"
+      :predicate "rdf:predicate"
+      :object "rdf:object"
+      :li "rdf:li"
+      :alt "rdf:Alt"
+      :bag "rdf:Bag"
+      :list "rdf:List"
+      :seq "rdf:Seq"
+      :first "rdf:first"
+      :rest "rdf:rest"
+      :nil "rdf:nil"}))
+#+END_SRC
+**** RDF Schema
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (def ^:const RDFS
+    (resolve-pname-map
+     {:sub-property "rdfs:subPropertyOf"
+      :sub-class "rdfs:subClassOf"
+      :range "rdfs:range"
+      :domain "rdfs:domain"}))
+#+END_SRC
+**** OWL
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (def ^:const OWL
+    (resolve-pname-map
+     {:class "owl:Class"
+      :thing "owl:Thing"
+      :sym-property "owl:SymmetricProperty"
+      :trans-property "owl:TransitiveProperty"
+      :inverse-of "owl:inverseOf"}))
+#+END_SRC
+**** LDK inference vocab
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (def ^:const INF
+    (resolve-pname-map
+     {:ruleset "inf:RuleSet"
+      :rules "inf:rules"
+      :name "inf:name"
+      :match "inf:match"
+      :result "inf:result"
+      :subject "inf:subject"
+      :predicate "inf:predicate"
+      :object "inf:object"}))
+#+END_SRC
+**** XSD
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (def ^:const XSD
+    (resolve-pname-map
+     {:boolean "xsd:boolean"
+      :byte "xsd:byte"
+      :short "xsd:short"
+      :integer "xsd:integer"
+      :int "xsd:int"
+      :long "xsd:long"
+      :non-positive-integer "xsd:nonPositiveInteger"
+      :non-negative-integer "xsd:nonNegativeInteger"
+      :positive-integer "xsd:positiveInteger"
+      :negative-integer "xsd:negativeInteger"
+      :unsigned-byte "xsd:unsignedByte"
+      :unsigned-short "xsd:unsignedShort"
+      :unsigned-int "xsd:unsignedInt"
+      :unsigned-long "xsd:unsignedLong"
+      :decimal "xsd:decimal"
+      :double "xsd:double"
+      :float "xsd:float"
+      :string "xsd:string"
+      :date-time "xsd:dateTime"}))
+
+  (def ^:const NUMERIC-XSD-TYPES
+    (->> [:integer
+          :decimal
+          :float
+          :double
+          :non-positive-integer
+          :non-negative-integer
+          :positive-integer
+          :negative-integer
+          :long
+          :int
+          :short
+          :byte
+          :unsigned-long
+          :unsigned-int
+          :unsigned-short
+          :unsigned-byte]
+         (map XSD)
+         (set)))
+#+END_SRC
+*** Triple pattern resolution
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn resolve-item
+    [prefixes ^String base x]
+    (cond
+     (symbol? x) x
+     (string? x) (condp = (first x)
+                   \" (subs x 1 (dec (count x)))
+                   \' (subs x 1 (dec (count x)))
+                   \< (resolve-iri base (subs x 1 (dec (count x))))
+                   (resolve-pname-as-node prefixes x))
+     :default x))
+
+  (defn resolve-simple-pattern
+    [prefixes base [s p o :as t]]
+    (let [ss (resolve-item prefixes base s)
+          pp (if (= "a" p)
+               (:type RDF)
+               (resolve-item prefixes base p))
+          oo (resolve-item prefixes base o)]
+      (if (and ss pp oo)
+        [[ss pp oo]]
+        (err/illegal-arg!! "couldn't resolve pattern: " t))))
+
+  (defn resolve-prop-path-pattern
+    [prefixes base [s p o :as t]]
+    (let [path (str/split p #"/")
+          vars (concat [s] (repeatedly (dec (count path)) #(symbol (str "?" (gensym "___q")))))]
+      (->> (concat (interleave vars path) [o])
+           (d/successive-nth 3 2)
+           (mapcat #(resolve-simple-pattern prefixes base %)))))
+
+  (defn resolve-patterns
+    [prefixes base patterns]
+    (mapcat
+     (fn [[s p o :as t]]
+       (if (and (string? p) (pos? (.indexOf ^String p "/")))
+         (resolve-prop-path-pattern prefixes base t)
+         (resolve-simple-pattern prefixes base t)))
+     patterns))
+
+  (defn apply-template
+    [tpl data]
+    (let [vars (set (d/filter-tree util/qvar? tpl))
+          [blanks vars] (d/bisect util/blank-var? vars)
+          blanks (zipmap blanks (map (fn [_] (make-blank-node)) blanks))
+          vars (zipmap vars (map #(get data %) vars))
+          subst (merge vars blanks)]
+      (map #(replace subst %) tpl)))
+#+END_SRC
+*** Helper functions
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn remove-context
+    [t] (if (= 4 (count t)) (rest t) t))
+#+END_SRC
+*** RDF collections
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn rdf-container-triples
+    ([c-type coll] (rdf-container-triples c-type (make-blank-node) coll))
+    ([c-type node coll]
+       (let [node-base (str (default-prefixes "rdf") \_)]
+         (->> coll
+              (map-indexed
+               (fn [i v]
+                 [node (make-resource (str node-base (inc i))) v]))
+              (cons [node (:type RDF) (c-type RDF)])))))
+
+  (defn rdf-list-triples
+    ([coll] (rdf-list-triples (make-blank-node) coll))
+    ([node coll]
+       (loop [triples [[node (:type RDF) (:list RDF)]] n node [i & more] coll]
+         (let [stm [[n (:first RDF) (or i (:nil RDF))]]]
+           (if (seq more)
+             (let [nxt (make-blank-node)]
+               (recur
+                (concat triples stm [[n (:rest RDF) nxt]])
+                nxt more))
+             (concat triples stm [[n (:rest RDF) (:nil RDF)]]))))))
+
+  (defn add-container
+    ([store c-type coll]
+       (add-container store c-type (make-blank-node) coll))
+    ([store c-type node coll]
+       (add-many store (rdf-container-triples c-type node coll))))
+
+  (defn add-bag
+    ([store coll] (add-container store :bag coll))
+    ([store node coll] (add-container store :bag node coll)))
+
+  (defn add-alt
+    ([store coll] (add-container store :alt (set coll)))
+    ([store node coll] (add-container store :alt node (set coll))))
+
+  (defn add-seq
+    ([store coll] (add-container store :seq coll))
+    ([store node coll] (add-container store :seq node coll)))
+
+  (defn add-list
+    ([store coll] (add-list store (make-blank-node) coll))
+    ([store node coll]
+       (add-many store (rdf-list-triples node coll))))
+
+  (defn rdf-list-seq
+    [store node]
+    (lazy-seq
+     (let [triples (select store node nil nil)
+           f (some (fn [[_ p o]] (when (= p (:first RDF)) o)) triples)
+           r (some (fn [[_ p o]] (when (= p (:rest RDF)) o)) triples)]
+       (when f (if r (cons f (rdf-list-seq store r)) [f])))))
+#+END_SRC
+*** RDF Statement reification
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+(defn add-reified-statement
+  ([store triple] (add-reified-statement store (make-blank-node) triple))
+  ([store node [s p o] & extra]
+     (let [store (add-many
+                  store (map #(cons node %)
+                             [[(:type RDF) (:statement RDF)]
+                              [(:subject RDF) s]
+                              [(:predicate RDF) p]
+                              [(:object RDF) o]]))]
+       (if (seq extra)
+         (add-many store (map #(cons node %) extra))
+         store))))
+
+(defn add-reified-group
+  ([store triples extra] (add-reified-group store (make-blank-node) triples extra))
+  ([store node triples extra]
+     (let [[store coll] (reduce
+                         (fn [[ds nodes] t]
+                           (let [n (make-blank-node)]
+                             [(add-reified-statement ds n t) (conj nodes n)]))
+                         [store []] triples)
+           store (add-bag store node coll)]
+       (if (seq extra)
+         (add-many store (map #(cons node %) extra))
+         store))))
+#+END_SRC
+** RDF object mapping
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/mapper.cljx
+  (ns thi.ng.ldk.core.mapper
+    (:require
+     [thi.ng.ldk.core.api :as api]
+     [thi.ng.common.data.core :as d]
+     [com.stuartsierra.dependency :as dep]))
+
+  (defn triple-dependency-graph
+    [triples]
+    (reduce (fn [g [s _ o]] (dep/depend g o s)) (dep/graph) triples))
+
+  (defn filter-roots
+    [g coll]
+    (filter #(not (seq (dep/immediate-dependencies g %))) coll))
+
+  (defn make-tree
+    [index g tree subj objects]
+    (->> objects
+         (mapcat #(mapcat (fn [ps] (when (= subj (ps 1)) [[(ps 0) %]])) (index %)))
+         (reduce
+          (fn [tree [p o]]
+            (if-let [o* (seq (dep/immediate-dependents g o))]
+              (update-in tree [subj p] d/vec-conj2* (make-tree index g {} o o*))
+              (update-in tree [subj p] d/vec-conj2* o)))
+          tree)))
+
+  (defn triples-as-tree
+    [triples & {:keys [subjects preds objects]
+                :or {subjects identity preds identity objects identity}}]
+    (let [s-idx (d/collect-indexed #(% 0) subjects triples)
+          p-idx (d/collect-indexed #(% 1) preds triples)
+          o-idx (d/collect-indexed #(% 2) objects triples)
+          triples (map (fn [[s p o]] [(s-idx s) (p-idx p) (o-idx o)]) triples)
+          index (reduce
+                 (fn [idx [s p o]] (update-in idx [o] d/set-conj [p s]))
+                 {} triples)
+          g (triple-dependency-graph triples)]
+      (->> (vals s-idx)
+           (filter-roots g)
+           (reduce #(make-tree index g % %2 (dep/immediate-dependents g %2)) {}))))
+#+END_SRC
+#+BEGIN_SRC clojure
+  (q/triples-as-tree
+   [[:a :p1 :b] [:a :p1 :g] [:a :p2 :c] [:b :p3 :d] [:d :p4 :e] [:b :p5 :f] [:g :p2 :h] [:g :p2 :hh]])
+
+  ;; =>
+  {:a
+   {:p1 [{:b {:p3 {:d {:p4 :e}}
+              :p5 :f}}
+         {:g {:p2 [:hh :h]}}]
+    :p2 :c}}
+#+END_SRC
