@@ -218,9 +218,11 @@
 #+END_SRC
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defn resolve-pname-map
-    ([m] (resolve-pname-map default-prefixes m))
-    ([prefixes m]
-       (reduce-kv (fn [m k v] (assoc m k (resolve-pname-as-node prefixes v))) {} m)))
+    ([m] (resolve-pname-map default-prefixes m true))
+    ([m as-node?] (resolve-pname-map default-prefixes m as-node?))
+    ([prefixes m as-node?]
+       (let [rfn (if as-node? resolve-pname-as-node resolve-pname)]
+         (reduce-kv (fn [m k v] (assoc m k (rfn prefixes v))) {} m))))
 #+END_SRC
 **** RDF syntax
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
@@ -273,6 +275,8 @@
       :object "inf:object"}))
 #+END_SRC
 **** XSD
+     XSD URIs are mainly used for dealing with typed literals and
+     thefore *not* defined as [[PNode]] instances, but merely simple strings.
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (def ^:const XSD
     (resolve-pname-map
@@ -294,7 +298,7 @@
       :double "xsd:double"
       :float "xsd:float"
       :string "xsd:string"
-      :date-time "xsd:dateTime"}))
+      :date-time "xsd:dateTime"} false))
 
   (def ^:const NUMERIC-XSD-TYPES
     (->> [:integer
@@ -322,23 +326,23 @@
 
   (defmulti literal-value #(datatype %))
 
-  (defmethod literal-value (label (:integer XSD))
+  (defmethod literal-value (:integer XSD)
     [x] (try
           ,#+clj  (Integer/parseInt (label x))
           ,#+cljs (js/parseInt (label x))
           (catch Exception e)))
 
-  (defmethod literal-value (label (:float XSD))
+  (defmethod literal-value (:float XSD)
     [x]
     ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
     ,#+cljs (js/parseFloat (label x)))
 
-  (defmethod literal-value (label (:double XSD))
+  (defmethod literal-value (:double XSD)
     [x]
     ,#+clj  (try (Float/parseFloat (label x)) (catch Exception e))
     ,#+cljs (js/parseFloat (label x)))
 
-  (defmethod literal-value (label (:boolean XSD))
+  (defmethod literal-value (:boolean XSD)
     [x]
     ,#+clj  (try (Boolean/parseBoolean (label x)) (catch Exception e))
     ,#+cljs (let [l (label x)]
@@ -347,13 +351,13 @@
               (or (= "false" l) (= "FALSE" l)) false
               :default nil)))
 
-  (defmethod literal-value (label (:string XSD))
+  (defmethod literal-value (:string XSD)
     [x] (label x))
 
   (defmethod literal-value nil
     [x] (label x))
 
-  (defmethod literal-value (label (:date-time XSD))
+  (defmethod literal-value (:date-time XSD)
     [x]
     ,#+clj (try (.newXMLGregorianCalendar xsd-factory ^String (label x)) (catch Exception e)))
 
@@ -552,12 +556,18 @@
               (update-in tree [subj p] d/vec-conj2* o)))
           tree)))
 
+  (defn ->pname
+    [prefixes] #(->> % (api/label) (api/iri-as-pname prefixes)))
+
+  (defn ->literal
+    [x] (if (api/literal? x) (api/literal-value x) x))
+
   (defn triples-as-tree
-    [triples & {:keys [subjects preds objects]
-                :or {subjects identity preds identity objects identity}}]
-    (let [s-idx (d/collect-indexed #(% 0) subjects triples)
-          p-idx (d/collect-indexed #(% 1) preds triples)
-          o-idx (d/collect-indexed #(% 2) objects triples)
+    [triples & {:keys [subj pred obj]
+                :or {subj identity pred identity obj identity}}]
+    (let [s-idx (d/collect-indexed #(% 0) subj triples)
+          p-idx (d/collect-indexed #(% 1) pred triples)
+          o-idx (d/collect-indexed #(% 2) obj triples)
           triples (map (fn [[s p o]] [(s-idx s) (p-idx p) (o-idx o)]) triples)
           index (reduce
                  (fn [idx [s p o]] (update-in idx [o] d/set-conj [p s]))
