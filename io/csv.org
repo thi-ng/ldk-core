@@ -94,7 +94,7 @@
           mapper (column-mapper
                   {} (fn [[p n] _]
                        (apply-template
-                        tpl {'?p (api/make-resource p) '?n (api/make-literal n)}))
+                        tpl {'?p (api/resource p) '?n (api/literal n)}))
                   false)]
       (parse-csv-with "peeps.csv" mapper)))
 #+END_SRC

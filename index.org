@@ -1,7 +1,7 @@
 #+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
 #+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
 #+EXPORT_EXCLUDE_TAGS: noexport
-#+TITLE:          Linked Data Kit 0.1.0-SNAPSHOT
+#+TITLE:          Linked Data Kit 0.1.2-SNAPSHOT
 #+AUTHOR:         Karsten Schmidt
 #+EMAIL:          k@thi.ng
 #+LANGUAGE:       en
@@ -17,7 +17,7 @@
 
 ** Injected properties                                             :noexport:
 #+BEGIN_SRC clojure :exports none :noweb-ref version
-0.1.0-SNAPSHOT
+0.1.1-SNAPSHOT
 #+END_SRC
 #+BEGIN_SRC clojure :exports none :noweb-ref project-url
 http://code.thi.ng/ldk-core

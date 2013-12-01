@@ -125,14 +125,14 @@
 #+END_SRC
 *** Node constructors / coercion
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
-  (defn make-resource
+  (defn resource
     [uri] (NodeURI. uri))
 
-  (defn make-blank-node
+  (defn blank-node
     ([] (NodeBlank. (util/uuid)))
     ([id] (NodeBlank. id)))
 
-  (defn make-literal
+  (defn literal
     ([val] (NodeLiteral. (str val) nil nil))
     ([val lang] (NodeLiteral. (str val) lang nil))
     ([val lang type] (NodeLiteral. (str val) lang (if (satisfies? PNode type) (label type) type))))
@@ -146,7 +146,7 @@
                (:id x)    (map->NodeBlank x)
                (:label x) (map->NodeLiteral x)
                :default nil)
-     (string? x) (make-literal x)
+     (string? x) (literal x)
      :default nil))
 #+END_SRC
 *** RDF namespaces handling & resolution
@@ -169,7 +169,7 @@
 
   (defn resolve-pname-as-node
     [prefixes ^String pname]
-    (make-resource (resolve-pname prefixes pname)))
+    (resource (resolve-pname prefixes pname)))
 
   (defn iri-as-pname
     [prefixes ^String iri]
@@ -436,7 +436,7 @@
     [tpl data]
     (let [vars (set (d/filter-tree util/qvar? tpl))
           [blanks vars] (d/bisect util/blank-var? vars)
-          blanks (zipmap blanks (map (fn [_] (make-blank-node)) blanks))
+          blanks (zipmap blanks (map (fn [_] (blank-node)) blanks))
           vars (zipmap vars (map #(get data %) vars))
           subst (merge vars blanks)]
       (map #(replace subst %) tpl)))
@@ -449,22 +449,22 @@
 *** RDF collections
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defn rdf-container-triples
-    ([c-type coll] (rdf-container-triples c-type (make-blank-node) coll))
+    ([c-type coll] (rdf-container-triples c-type (blank-node) coll))
     ([c-type node coll]
        (let [node-base (str (default-prefixes "rdf") \_)]
          (->> coll
               (map-indexed
                (fn [i v]
-                 [node (make-resource (str node-base (inc i))) v]))
+                 [node (resource (str node-base (inc i))) v]))
               (cons [node (:type RDF) (c-type RDF)])))))
 
   (defn rdf-list-triples
-    ([coll] (rdf-list-triples (make-blank-node) coll))
+    ([coll] (rdf-list-triples (blank-node) coll))
     ([node coll]
        (loop [triples [[node (:type RDF) (:list RDF)]] n node [i & more] coll]
          (let [stm [[n (:first RDF) (or i (:nil RDF))]]]
            (if (seq more)
-             (let [nxt (make-blank-node)]
+             (let [nxt (blank-node)]
                (recur
                 (concat triples stm [[n (:rest RDF) nxt]])
                 nxt more))
@@ -472,7 +472,7 @@
 
   (defn add-container
     ([store c-type coll]
-       (add-container store c-type (make-blank-node) coll))
+       (add-container store c-type (blank-node) coll))
     ([store c-type node coll]
        (add-many store (rdf-container-triples c-type node coll))))
 
@@ -489,7 +489,7 @@
     ([store node coll] (add-container store :seq node coll)))
 
   (defn add-list
-    ([store coll] (add-list store (make-blank-node) coll))
+    ([store coll] (add-list store (blank-node) coll))
     ([store node coll]
        (add-many store (rdf-list-triples node coll))))
 
@@ -504,7 +504,7 @@
 *** RDF Statement reification
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
 (defn add-reified-statement
-  ([store triple] (add-reified-statement store (make-blank-node) triple))
+  ([store triple] (add-reified-statement store (blank-node) triple))
   ([store node [s p o] & extra]
      (let [store (add-many
                   store (map #(cons node %)
@@ -517,11 +517,11 @@
          store))))
 
 (defn add-reified-group
-  ([store triples extra] (add-reified-group store (make-blank-node) triples extra))
+  ([store triples extra] (add-reified-group store (blank-node) triples extra))
   ([store node triples extra]
      (let [[store coll] (reduce
                          (fn [[ds nodes] t]
-                           (let [n (make-blank-node)]
+                           (let [n (blank-node)]
                              [(add-reified-statement ds n t) (conj nodes n)]))
                          [store []] triples)
            store (add-bag store node coll)]

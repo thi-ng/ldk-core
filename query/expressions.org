@@ -103,7 +103,7 @@
               iri (if iri iri
                       (when (and base (= \< (first v)))
                         (api/resolve-iri base (subs v 1 (dec (count v))))))]
-          (api/make-resource (or iri v)))
+          (api/resource (or iri v)))
         (= :uri nt) v
         :default nil)))
 
@@ -195,7 +195,7 @@
   (defmethod compile-expr :uuid
     [q [op & args]]
     (ensure-args :uuid 0 args)
-    (fn [_] (api/make-resource (str "urn:uuid:" (util/uuid)))))
+    (fn [_] (api/resource (str "urn:uuid:" (util/uuid)))))
 
   (defmethod compile-expr :concat
     [q [op & args]] (apply concat* (compile-expression q args)))

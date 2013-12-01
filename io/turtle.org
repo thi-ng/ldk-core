@@ -267,12 +267,12 @@
              pname (api/resolve-pname (:prefixes state) (unescape pname))]
          ;; (prn :pname pname :src src)
          (if pname
-           [(api/make-resource pname) state src]
+           [(api/resource pname) state src]
            [nil (fail state (str "invalid pname: " src)) src]))))
 
   (defn typed-literal  [x]
     (when-let [t (some (fn [[re t]] (when (re-matches re x) t)) typed-literal-patterns)]
-      (api/make-literal x nil t)))
+      (api/literal x nil t)))
 
   (defn parse-eof [_ state] (assoc state :eof true))
 
@@ -316,7 +316,7 @@
             :base (parse-prefix-terminal in (set-base-iri state iri))
             :prefix (parse-prefix-terminal in (add-prefix state prefix iri))
             (-> state
-                (assoc ctx (api/make-resource (resolve-iri state iri)))
+                (assoc ctx (api/resource (resolve-iri state iri)))
                 (dissoc :prefix-ns :iri-ctx)
                 (transition))))
         state)))
@@ -348,7 +348,7 @@
           (let [ctx (:triple-ctx state)
                 state (if (get-in state [:blanks id])
                         state
-                        (assoc-in state [:blanks id] (api/make-blank-node)))
+                        (assoc-in state [:blanks id] (api/blank-node)))
                 state (-> state
                           (transition)
                           (assoc ctx (get-in state [:blanks id])))]
@@ -361,7 +361,7 @@
     ;; (prn :bnode-proplist)
     (.read in)
     (skip-ws in)
-    (let [node (api/make-blank-node)
+    (let [node (api/blank-node)
           state (-> (if (list-state? state)
                       (update-in state [:coll-items] conj node)
                       state)
@@ -447,7 +447,7 @@
     ;; (prn :list)
     (.read in)
     (skip-ws in)
-    (let [node (api/make-blank-node)
+    (let [node (api/blank-node)
           state (-> state (transition) (assoc ctx node))]
       ;; (trace :list state)
       (if (= \) (peek in))
@@ -473,7 +473,7 @@
                      :default (parse-end-triple
                                in (assoc state
                                     :triple-ctx :object
-                                    :object (api/make-literal ""))))
+                                    :object (api/literal ""))))
                     (parse-literal-content in (assoc state :literal n :lit-terminator q :lit-regex re))))]
       (cond
        (= c \") (trans \" :lit-chars-double)
@@ -492,7 +492,7 @@
         (condp = n
           \@ (parse-lang-tag in (assoc state :literal lit))
           \^ (parse-literal-type in (assoc state :literal lit))
-          (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
+          (let [state (-> state (transition) (assoc :object (api/literal lit)))]
             ((:state state) in state)))
         (fail state (str "illegal escape seq in literal: " src))))) ;; TODO add xsd:string type
 
@@ -505,7 +505,7 @@
         (condp = (peek in)
           \@ (parse-lang-tag in (assoc state :literal lit))
           \^ (parse-literal-type in (assoc state :literal lit))
-          (let [state (-> state (transition) (assoc :object (api/make-literal lit)))]
+          (let [state (-> state (transition) (assoc :object (api/literal lit)))]
             ((:state state) in state)))
         (fail state (str "illegal escape sequence in literal: " lit)))
       (fail state "unterminated literal")))
@@ -517,7 +517,7 @@
     (let [ok (:lang-tag char-ranges)
           lang (read-while in #(ok %) true)]
       (if (re-matches #"(?i)[a-z]{2,3}(-[a-z0-9]+)*" lang)
-        (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) lang)))]
+        (let [state (-> state (transition) (assoc :object (api/literal (:literal state) lang)))]
           ((:state state) in state))
         (fail state (str "illegal language tag: " lang)))))
 
@@ -528,7 +528,7 @@
     (if (next-char? in \^)
       (let [[iri state] (if (= (peek in) \<) (read-iri-ref in state) (read-pname in state))]
         (if iri
-          (let [state (-> state (transition) (assoc :object (api/make-literal (:literal state) nil iri)))]
+          (let [state (-> state (transition) (assoc :object (api/literal (:literal state) nil iri)))]
             ((:state state) in state))
           state))))
 
