@@ -149,6 +149,16 @@
      (string? x) (literal x)
      :default nil))
 #+END_SRC
+*** Node type & triple validation
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn ensure-triple
+    ([[s p o]] (ensure-triple s p o))
+    ([s p o]
+       (if-not (and (satisfies? PNode s) (or (uri? s) (blank? s))
+                    (satisfies? PNode p) (uri? p)
+                    (satisfies? PNode o) (literal? o))
+         (throw IllegalArgumentException. (str "Invalid triple: " s p o)))))
+#+END_SRC
 *** RDF namespaces handling & resolution
 **** Namespace resolution
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
