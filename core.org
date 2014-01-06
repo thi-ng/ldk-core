@@ -12,6 +12,8 @@
      [thi.ng.ldk.common.util :as util]
      [thi.ng.common.data.core :as d]
      [thi.ng.common.error :as err]
+     [clj-time.format :as tf]
+     [clj-time.coerce :as tc]
      [clojure.string :as str]))
 #+END_SRC
 *** Protocol definitions
@@ -53,10 +55,7 @@
 **** PNode
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PNode
-    (label [this])
-    (blank? [this])
-    (literal? [this])
-    (uri? [this]))
+    (label [this]))
 #+END_SRC
 **** PLiteral
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
@@ -76,9 +75,6 @@
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeURI [uri]
     PNode
-    (blank? [this] false)
-    (literal? [this] false)
-    (uri? [this] true)
     (label [this] (.toString uri))
     PIndexable
     (index-value [this] (.toString uri)))
@@ -87,9 +83,6 @@
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeLiteral [label ^String lang type]
     PNode
-    (blank? [this] false)
-    (literal? [this] true)
-    (uri? [this] false)
     (label [this] label)
     PLiteral
     (plain-literal? [this]
@@ -108,9 +101,6 @@
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeBlank [id]
     PNode
-    (blank? [this] true)
-    (uri? [this] false)
-    (literal? [this] false)
     (label [this] id)
     PIndexable
     (index-value [this] id))
@@ -130,33 +120,76 @@
 
   (defn blank-node
     ([] (NodeBlank. (util/uuid)))
-    ([id] (NodeBlank. id)))
+    ([id] (NodeBlank. (str id))))
 
   (defn literal
     ([val] (NodeLiteral. (str val) nil nil))
     ([val lang] (NodeLiteral. (str val) lang nil))
-    ([val lang type] (NodeLiteral. (str val) lang (if (satisfies? PNode type) (label type) type))))
+    ([val lang type]
+       (NodeLiteral.
+        (str val) lang
+        (cond
+         (satisfies? PNode type) (label type)
+         (string? type) type
+         :default (throw IllegalArgumentException.
+                         (str "Invalid literal type: " type))))))
 
   (defn as-node
+    "Attempts to cast x into a PNode implementation, including typed
+    literals for numbers, dates & booleans. If given a string, first
+    calls maybe-uri? and constructs a NodeURI or NodeLiteral. If given a
+    map, resulting node type will depend on presence of these keys:
+    :uri (NodeURI), :id (NodeBlank), :label (NodeLiteral)."
     [x]
     (cond
-     (satisfies? PNode x) x
-     (map? x) (cond
-               (:uri x)   (map->NodeURI x)
-               (:id x)    (map->NodeBlank x)
-               (:label x) (map->NodeLiteral x)
-               :default nil)
-     (string? x) (literal x)
+     (satisfies? PNode x)            x
+     (map? x)    (cond
+                  (:uri x)           (map->NodeURI x)
+                  (:id x)            (map->NodeBlank x)
+                  (:label x)         (map->NodeLiteral x)
+                  :default           nil)
+     (string? x) (if (maybe-uri? x)  (resource x) (literal x))
+     (number? x) (condp = (type x)
+                   java.lang.Long    (literal x nil (:long XSD))
+                   java.lang.Integer (literal x nil (:int XSD))
+                   java.lang.Double  (literal x nil (:double XSD))
+                   java.lang.Float   (literal x nil (:float XSD))
+                   java.lang.Byte    (literal x nil (:byte XSD))
+                   java.lang.Short   (literal x nil (:short XSD))
+                   nil)
+     (= java.util.Date (type x))     (literal
+                                      (tf/unparse (:basic-date-time tf/formatters)
+                                                  (tc/from-date x))
+                                      nil (:date-time XSD))
+     (= java.lang.Boolean (type x))  (literal x nil (:boolean XSD))
      :default nil))
 #+END_SRC
 *** Node type & triple validation
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn uri?
+    "Returns true if x is a NodeURI instance"
+    [x] (= NodeURI (type x)))
+
+  (defn maybe-uri?
+    [x] (not (nil? (re-find #"\w+:[/\w\d]" x))))
+
+  (defn blank?
+    "Returns true if x is a NodeBlank instance"
+    [x] (= NodeBlank (type x)))
+
+  (defn literal?
+    "Returns true if x is a NodeLiteral instance"
+    [x] (= NodeLiteral (type x)))
+
   (defn ensure-triple
+    "Throws IllegalArgumentException if the given triple is invalid,
+    i.e. subject must be either NodeURI or NodeBlank, pred must be
+    NodeURI, object must be any PNode implementation."
     ([[s p o]] (ensure-triple s p o))
     ([s p o]
-       (if-not (and (satisfies? PNode s) (or (uri? s) (blank? s))
-                    (satisfies? PNode p) (uri? p)
-                    (satisfies? PNode o) (literal? o))
+       (when-not (and (or (uri? s) (blank? s))
+                    (uri? p)
+                    (satisfies? PNode o))
          (throw IllegalArgumentException. (str "Invalid triple: " s p o)))))
 #+END_SRC
 *** RDF namespaces handling & resolution

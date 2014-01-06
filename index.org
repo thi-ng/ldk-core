@@ -44,6 +44,10 @@ http://code.thi.ng/ldk-core
 #+BEGIN_SRC clojure :noweb-ref dep-json
 [org.clojure/data.json "0.2.2"]
 #+END_SRC
+**** [[https://github.com/seancorfield/clj-time][clj-time]]
+#+BEGIN_SRC clojure :noweb-ref dep-clj-time
+[clj-time "0.5.0"]
+#+END_SRC
 **** [[https://github.com/stuartsierra/dependency][com.stuartsierra/dependency]]
 #+BEGIN_SRC clojure :noweb-ref dep-depgraph
 [com.stuartsierra/dependency "0.1.0"]
