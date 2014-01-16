@@ -113,15 +113,43 @@
     nil
     (index-value [this] this))
 #+END_SRC
+*** Node type & triple validation
+#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
+  (defn uri?
+    "Returns true if x is a NodeURI instance"
+    [x] (= NodeURI (type x)))
+
+  (defn maybe-uri?
+    [x] (not (nil? (re-find #"[\w+]+:[/\w\d]" x))))
+
+  (defn blank?
+    "Returns true if x is a NodeBlank instance"
+    [x] (= NodeBlank (type x)))
+
+  (defn literal?
+    "Returns true if x is a NodeLiteral instance"
+    [x] (= NodeLiteral (type x)))
+
+  (defn ensure-triple
+    "Throws IllegalArgumentException if the given triple is invalid,
+    i.e. subject must be either NodeURI or NodeBlank, pred must be
+    NodeURI, object must be any PNode implementation."
+    ([[s p o]] (ensure-triple s p o))
+    ([s p o]
+       (when-not (and (or (uri? s) (blank? s))
+                    (uri? p)
+                    (satisfies? PNode o))
+         (throw (IllegalArgumentException. (str "Invalid triple: " s p o))))))
+#+END_SRC
 *** Node constructors / coercion
 #+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
   (defn resource
     [uri] (NodeURI. uri))
-
+  
   (defn blank-node
     ([] (NodeBlank. (util/uuid)))
     ([id] (NodeBlank. (str id))))
-
+  
   (defn literal
     ([val] (NodeLiteral. (str val) nil nil))
     ([val lang] (NodeLiteral. (str val) lang nil))
@@ -129,11 +157,15 @@
        (NodeLiteral.
         (str val) lang
         (cond
+         (nil? type)             nil
          (satisfies? PNode type) (label type)
-         (string? type) type
-         :default (throw IllegalArgumentException.
-                         (str "Invalid literal type: " type))))))
-
+         (string? type)          type
+         :default                (throw
+                                  (IllegalArgumentException.
+                                   (str "Invalid literal type: " type)))))))
+  
+  (declare XSD)
+  
   (defn as-node
     "Attempts to cast x into a PNode implementation, including typed
     literals for numbers, dates & booleans. If given a string, first
@@ -163,34 +195,6 @@
                                       nil (:date-time XSD))
      (= java.lang.Boolean (type x))  (literal x nil (:boolean XSD))
      :default nil))
-#+END_SRC
-*** Node type & triple validation
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/core/api.cljx
-  (defn uri?
-    "Returns true if x is a NodeURI instance"
-    [x] (= NodeURI (type x)))
-
-  (defn maybe-uri?
-    [x] (not (nil? (re-find #"\w+:[/\w\d]" x))))
-
-  (defn blank?
-    "Returns true if x is a NodeBlank instance"
-    [x] (= NodeBlank (type x)))
-
-  (defn literal?
-    "Returns true if x is a NodeLiteral instance"
-    [x] (= NodeLiteral (type x)))
-
-  (defn ensure-triple
-    "Throws IllegalArgumentException if the given triple is invalid,
-    i.e. subject must be either NodeURI or NodeBlank, pred must be
-    NodeURI, object must be any PNode implementation."
-    ([[s p o]] (ensure-triple s p o))
-    ([s p o]
-       (when-not (and (or (uri? s) (blank? s))
-                    (uri? p)
-                    (satisfies? PNode o))
-         (throw IllegalArgumentException. (str "Invalid triple: " s p o)))))
 #+END_SRC
 *** RDF namespaces handling & resolution
 **** Namespace resolution
@@ -441,8 +445,8 @@
     (cond
      (symbol? x) x
      (string? x) (condp = (first x)
-                   \" (subs x 1 (dec (count x)))
-                   \' (subs x 1 (dec (count x)))
+                   \" (literal (subs x 1 (dec (count x))))
+                   \' (literal (subs x 1 (dec (count x))))
                    \< (resolve-iri base (subs x 1 (dec (count x))))
                    (resolve-pname-as-node prefixes x))
      :default x))
