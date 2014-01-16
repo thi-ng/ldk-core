@@ -11,13 +11,16 @@
      [thi.ng.common.data.core :as d]
      [clojure.set :as set]
      ,#+clj [clojure.pprint :refer [pprint]]))
-
+  
   (defn resolve-patterns
+    "Takes a map with namespace `prefixes` or `base` IRI and a seq of
+    triple patterns. Returns resolved patterns only if prefixes/base is
+    defined, else returns original."
     [{:keys [prefixes base]} patterns]
     (if (or base prefixes)
       (api/resolve-patterns prefixes base patterns)
       patterns))
-
+  
   (defn accumulate-var-values
     "Takes a seq of query result maps and a set of var names. Returns a
     map with all found vars (as keys) and their values (as set)."
@@ -30,13 +33,14 @@
             vmap
             (update-in vmap [v] d/set-conj (t v)))) vmap vars))
      {} results))
-
-  (defn produce-queries-with-bound-vars
+  
+  (defn produce-patterns-with-bound-vars
     "Takes a triple pattern (possibly with variables) and a map of
-    possible value sets (or single values) for each var. Produces lazy seq
-    of resulting triple query patterns using cartesian product of all values.
-
-        (produce-queries-with-bound-vars
+    possible value sets (each *must* be a set or single value) for each var.
+    Produces lazy seq of resulting triple query patterns using cartesian
+    product of all values.
+  
+        (produce-patterns-with-bound-vars
           [?a :type ?b]
           {?a #{\"me\" \"you\"} ?b #{\"foo\" \"bar\"})
         => ((\"me\" :type \"foo\") (\"me\" :type \"bar\")
@@ -49,12 +53,30 @@
         (d/cartesian-product
          (if (set? s) s #{s}) (if (set? p) p #{p}) (if (set? o) o #{o}))
         [[s p o]])))
-
+  
   (defn inject-res-var
-    "Takes a map `r`, a vector `t`, a var name `v` and an index. If `v`
+    "Takes a result binding map `r`, a triple vector `t`, a var name `v` and an index. If `v`
     is truthy, injects `v` as new key into `r` with its value at (t idx)."
     [r t v idx] (if v (assoc r v (t idx)) r))
-
+  
+  (defn register-same-as
+    "Takes a map of aliases and adds a bi-directional relationship
+    between `x` and `y`."
+    [aliases x y]
+    (-> aliases
+        (update-in [x] d/set-conj y)
+        (update-in [y] d/set-conj x)))
+  
+  (defn same-as?
+    "Takes a map of same-as rels and two keys, returns true if keys
+    are considered equal."
+    ([aliases x y] (or (= x y) (same-as? aliases [x] y #{})))
+    ([aliases [x & queue] y visited]
+       (if (get-in aliases [x y])
+         true
+         (when-let [q' (->> x aliases (filter (complement visited)) (into queue) set seq)]
+           (recur aliases q' y (conj visited x))))))
+  
   (defn triple-verifier
     "Takes a triple pattern (potentially with vars) and a 3-elem boolean
     vector to indicate which SPO is a var. Returns fn which accepts a
@@ -68,7 +90,7 @@
                            (= ts tp) (fn [[rs rp ro]] (and (= rs rp) (not= rs ro)))
                            (= ts to) (fn [[rs rp ro]] (and (= rs ro) (not= rs rp)))
                            (= tp to) (fn [[rs rp ro]] (and (= rp ro) (not= rs rp)))
-                           :default (fn [_] true))
+                           :default (constantly true))
      (and vars varp) (if (= ts tp)
                        (fn [[rs rp]] (= rs rp))
                        (fn [[rs rp]] (not= rs rp)))
@@ -78,9 +100,13 @@
      (and varp varo) (if (= tp to)
                        (fn [[_ rp ro]] (= rp ro))
                        (fn [[_ rp ro]] (not= rp ro)))
-     :default (fn [_] true)))
-
+     :default (constantly true)))
+  
   (defn select-with-bindings
+    "Takes a PModel, triple pattern (optionally with vars) and a var
+    binding map. Returns seq of all matching result bindings. An
+    optional boolean flag can be given to include original triple for
+    each result binding."
     ([store t] (select-with-bindings store t {} true))
     ([store [ts tp to :as t] b include-triple?]
        (let [[syms symp symo :as sym] (map symbol? t)
@@ -105,25 +131,29 @@
                          (inject-res-var t p 1)
                          (inject-res-var t o 2))))))
               (filter (complement nil?))))))
-
+  
   (defn build-queries-with-prebounds
+    "Takes a triple pattern and var binding map. Returns seq of all
+    possible query specs, each a 2-elem vector of [resolved-pattern
+    map-binding-index-in-pattern-to-var]."
     [[s p o :as t] bindings]
     (let [bmap (if (bindings s) {0 s} {})
           bmap (if (bindings p) (assoc bmap 1 p) bmap)
           bmap (if (bindings o) (assoc bmap 2 o) bmap)
-          queries (produce-queries-with-bound-vars t bindings)]
+          queries (produce-patterns-with-bound-vars t bindings)]
       (map #(vector % bmap) queries)))
-
+  
   (defn sort-patterns
-    "Sorts query patterns in most restrictive order, based on number of vars
-    and reference to patterns with single vars."
+    "Sorts a seq of triple patterns in dependency order using any
+    re-occuring vars. Triples with single or no vars will be in head
+    position."
     [patterns]
     (let [q (map #(let [v (d/filter-tree util/qvar? %)] [(count v) v %]) patterns)
-          singles (set (mapcat second (filter #(= 1 (first %)) q)))]
+          singles (->> q (filter #(= 1 (first %))) (mapcat second) set)]
       (->> q
            (sort-by (fn [[c v]] (- (* c 4) (count (filter singles v)))))
-           (map #(nth % 2)))))
-
+           (map peek))))
+  
   ;; TODO add support for owl:sameAs aliases?
   (defn unique-var-bindings?
     [bindings]
@@ -133,14 +163,14 @@
                (count (set (vals bindings))))
         bindings))
     bindings)
-
+  
   (defn restrict-multi-bindings
     [p bmap bindings]
     (let [p (vec p)]
       (reduce
        (fn [b [k v]] (if (set? (b v)) (assoc b v (p k)) b))
        bindings bmap)))
-
+  
   (defn queue-queries
     [q [[ds & p] & patterns] bindings]
     (let [queries (build-queries-with-prebounds p bindings)]
@@ -149,24 +179,34 @@
          (let [r-binds (restrict-multi-bindings p bmap bindings)]
            (conj q [ds (cons patt patterns) r-binds])))
        q queries)))
-
+  
   (defn inject-bind-expr
+    "Takes a result binding map `res` and vector of [var fn]. If fn
+    applied to `res` returns truthy, assocs that result in map under
+    `var` key."
     [res [var expr]]
     (if-let [r (expr res)] (assoc res var r) res))
-
+  
   (defn inject-bindings
+    "Take a var binding map and seq of result bindings and injects those
+    using `inject-bind-expr`. Returns updated results."
     [binds res]
     (map (fn [r] (reduce inject-bind-expr r binds)) res))
-
+  
   (defn merge-bindings
+    "Takes two result binding maps and a boolean flag. Returns merged
+    map. If flag is truthy, also concats :__triples keys."
     [old new triples?]
     (if triples?
       (-> old
           (merge (dissoc new :__triples))
           (assoc :__triples (apply conj (:__triples old) (:__triples new))))
       (merge old new)))
-
+  
   (defn- select-join*
+    "Takes a queue of query patterns, an accumulator of result bindings
+    and map of query options. Recursively & lazily processes query queue
+    and returns lazy-seq of result bindings."
     [q [r & more] opts]
     (if r
       (lazy-seq (cons r (select-join* q more opts)))
@@ -188,16 +228,22 @@
                       bindings (if flt (filter flt bindings) bindings)]
                   (recur q bindings opts))))
             (recur q clojure.lang.PersistentVector/EMPTY opts))))))
-
+  
   (defn select-join
+    "Takes a seq of quad query patterns and optional var binding map and
+    map of query options. Recursively & lazily processes patterns and
+    returns lazy-seq of result bindings."
     ([patterns] (select-join patterns {} nil))
     ([patterns opts] (select-join patterns {} opts))
     ([patterns bindings opts]
        (select-join*
         (queue-queries clojure.lang.PersistentQueue/EMPTY patterns bindings)
         clojure.lang.PersistentVector/EMPTY opts)))
-
+  
   (defn select-join-from
+    "Takes a PModel instance, seq of triple patterns and optional var
+    bindings and query options. Injects model as first element into all
+    patterns and then calls `select-join`."
     ([ds patterns] (select-join-from ds patterns {} nil))
     ([ds patterns opts] (select-join-from ds patterns {} opts))
     ([ds patterns bindings opts]
