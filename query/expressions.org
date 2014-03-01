@@ -3,7 +3,7 @@
 #+EXPORT_EXCLUDE_TAGS: noexport
 
 * Namespace: thi.ng.ldk.query.expressions
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/query/expressions.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/expressions.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.query.expressions
     (:require
      [thi.ng.ldk.core.api :as api]
@@ -129,7 +129,7 @@
     [id n args]
     (if (= n (count args))
       args
-      (err/illegal-arg!!
+      (err/illegal-arg!
        (str "expected " n "params for expr " id ", but got ") (count args))))
 
   (declare compile-expression)
@@ -202,7 +202,7 @@
 
   (defmethod compile-expr :default
     [q [op & args]]
-    (err/unsupported!! (str "error compiling filter, unsupported op: " op)))
+    (err/unsupported! (str "error compiling filter, unsupported op: " op)))
 
   (defn compile-expression
     [q spec]

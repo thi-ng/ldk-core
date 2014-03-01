@@ -4,7 +4,7 @@
 
 * Namespace: thi.ng.ldk.io.turtle
 
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/io/turtle.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/turtle.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.io.turtle
     (:refer-clojure :exclude [peek])
     (:require

@@ -3,7 +3,7 @@
 #+EXPORT_EXCLUDE_TAGS: noexport
 
 * Namespace: thi.ng.ldk.query.core
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/query/core.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/core.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.query.core
     (:require
      [thi.ng.ldk.core.api :as api]
@@ -13,7 +13,7 @@
      [thi.ng.ldk.store.memory :as mem]
      [thi.ng.common.data.core :as d]
      ,#+clj [clojure.pprint :refer [pprint]]))
-
+  
   (defn filter-result-vars
     ([vars res] (filter-result-vars vars res false))
     ([vars res triples?]
@@ -22,16 +22,16 @@
                    #(-> % (select-keys vars) (assoc :__triples (:__triples %)))
                    #(select-keys % vars))]
          (map sel res))))
-
+  
   (defn format-result-vars
     [results]
     (map
      (fn [r] (into (sorted-map) (map (fn [[k v]] [(-> k util/var-name keyword) v]) r)))
      results))
-
+  
   (defn node-label-or-val
     [x] (if (satisfies? api/PNode x) (api/label x) x))
-
+  
   (defn order-asc
     [vars results]
     (if (coll? vars)
@@ -41,7 +41,7 @@
       (sort-by
        #(node-label-or-val (get % vars))
        results)))
-
+  
   (defn order-desc
     [vars results]
     (if (coll? vars)
@@ -53,7 +53,17 @@
        #(node-label-or-val (get % vars))
        #(- (compare ^String % ^String %2))
        results)))
-
+  
+  (defn distinct-result-set
+    [results]
+    (->> results
+         (reduce
+          (fn [acc r]
+            (let [vs (set (vals r))]
+              (if (acc vs) acc (assoc acc vs r))))
+          {})
+         (vals)))
+  
   (defn select-reified
     "Selects all reified statements from store, optional for given triple
     pattern. Returns map of results grouped by reified statment id and
@@ -78,23 +88,23 @@
                    [id {:statement [s p o]
                         :props (format-result-vars (filter-result-vars triples '[?p ?o]))}])))
               (into {})))))
-
+  
   (defn resolve-graph
     [g]
     (if (satisfies? api/PModel g) g (apply api/get-model g)))
-
+  
   (defn remove-generated-vars
     [res]
     (let [gen (filter #(.startsWith (name %) "?___q") (keys res))]
       (apply dissoc res gen)))
-
+  
   (defn process-optional
     [{:keys [optional where graph] :as q} res]
     (let [patterns (q/resolve-patterns q optional)]
       (mapcat
        #(if-let [r (q/select-join-from (resolve-graph graph) patterns % nil)] r %)
        res)))
-
+  
   (comment
     (def q
       {:prefixes (api/prefix-map ds2)
@@ -102,7 +112,7 @@
        :select :*
        :graph ds2
        :query [{:where '[[?p "foaf:givenName" ?gn]] :filter '[:not-exists [?p "foaf:surname" "'schmidt'"]] :optional [{:where '[[?p "thi:age" ?a]]}]}]}))
-
+  
   (defn process-select*
     [{{:keys [where optional filter bindings graph]} :query
       :keys [results optional? include-triples] :as q}]
@@ -128,7 +138,7 @@
       (reduce
        (fn [q opt] (process-select* (assoc q :query opt :optional? true)))
        (assoc q :results res) optional)))
-
+  
   (defn process-select
     [{:keys [select bindings limit include-triples]
       ord :order ord-a :order-asc ord-d :order-desc
@@ -147,11 +157,11 @@
                 (map remove-generated-vars res)
                 (filter-result-vars select res include-triples))]
       res))
-
+  
   (defn process-ask
     [q]
     (when (seq (process-select (assoc q :limit 1))) true))
-
+  
   (defn process-construct
     [{:keys [prefixes construct into] :as q}]
     (let [targets (q/resolve-patterns q construct)
@@ -170,7 +180,7 @@
           (api/add-many into res)
           (api/add-many (into 0) (into 1) res))
         (api/add-many (mem/make-store prefixes) res))))
-
+  
   (comment
     (def q
       {:prefixes {:thi "http://thi.ng/owl#"
@@ -185,17 +195,18 @@
                 [?prj "thi:hasLicense" ?lic]]
        :filter [:not-exists '[?prj "thi:hasLicense" "thi:lgpl"]]
        :bind {'?title [:concat ?prj " (" ?s ")"]}}))
-
+  
   (defn process-query
-    [{:keys [prefixes] :as q}]
+    [{:keys [prefixes graph] :as q}]
     (let [type (some #(when (% q) %) [:select :ask :construct :insert :delete])
+          prefixes (if graph (merge (api/prefix-map graph) prefixes) prefixes)
           q (if prefixes (update-in q [:prefixes] d/stringify-keys) q)]
       (condp = type
         :select (process-select q)
         :ask (process-ask q)
         :construct (process-construct q)
         (prn "unimplemented"))))
-
+  
   (defn result-triples
     [results]
     (mapcat :__triples (if (map? results) [results] results)))

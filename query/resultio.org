@@ -3,7 +3,7 @@
 #+EXPORT_EXCLUDE_TAGS: noexport
 
 * Namespace: thi.ng.ldk.query.resultio
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/query/resultio.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/resultio.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.query.resultio
     (:require
      [thi.ng.ldk.core.api :as api]
@@ -15,7 +15,7 @@
      #+clj [clojure.data.json :as json]
      #+clj [clojure.java.io :as jio]))
 #+END_SRC
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/query/resultio.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/resultio.cljx
   (defn result-value
     [x]
     (if (satisfies? api/PNode x) (api/label x) x))

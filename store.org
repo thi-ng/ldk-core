@@ -4,22 +4,22 @@
 
 * Namespace: thi.ng.ldk.store
 
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/store/memory.cljx
+#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/store/memory.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.store.memory
     (:require
      [thi.ng.ldk.core.api :as api]
      [thi.ng.ldk.io.turtle :as ttl]
      [thi.ng.common.data.core :as d]))
-
+  
   (def ^:dynamic *hashimpl* (comp hash api/index-value))
-
+  
   (defn index-entity
     [{idx :idx :as store} e]
     (let [h (*hashimpl* e)]
       (if (idx h)
         [store h]
         [(assoc-in store [:idx h] e) h])))
-
+  
   (defn remove-from-index
     [store idx i1 i2 i3]
     (let [props ((idx store) i1)
@@ -30,23 +30,23 @@
         (if-not (seq obj)
           (assoc-in store [idx i1] props)
           (assoc-in store [idx i1 i2] obj)))))
-
+  
   (defn prune-entity-index
     [store e]
     (if-not (or ((:spo store) e) ((:pos store) e) ((:ops store) e))
       (update-in store [:idx] dissoc e)
       store))
-
+  
   (defn triple-sp* [{:keys [idx]} s p] #(vector s p (idx %)))
   (defn triple-*po [{:keys [idx]} p o] #(vector (idx %) p o))
-
+  
   (defn select-seq
     ([coll triple-fn & [f-fn]]
        (mapcat (fn [[h objects]]
                  (map (triple-fn h) (if f-fn (filter f-fn objects) objects)))
                coll)))
-
-  (defrecord MemStore [ns idx spo pos ops]
+  
+  (defrecord MemStore [ns base idx spo pos ops]
     api/PModel
     (add-statement [this [s p o]]
       (let [[this sh] (index-entity this s)
@@ -92,6 +92,9 @@
     (add-prefix [this prefix-map]
       (update-in this [:ns] merge prefix-map))
     (prefix-map [this] ns)
+    (base-uri [this] base)
+    (set-base-uri [this uri]
+      (assoc this :base uri))
     (select [this]
       (api/select this nil nil nil))
     (select
@@ -149,7 +152,7 @@
              (api/remove-statement this t)
              this))
          this (api/select this nil nil nil)))))
-
+  
   (defrecord MemDataset [models]
     api/PModel
     (add-statement [this s]
@@ -202,24 +205,25 @@
       (update-in this [:models] dissoc id))
     (get-model [this id]
       (models id)))
-
+  
   (defn make-store
-    ([] (make-store {}))
-    ([prefixes] (MemStore. (merge api/default-prefixes prefixes) {} {} {} {})))
-
+    ([] (make-store {} nil))
+    ([prefixes] (make-store prefixes nil))
+    ([prefixes base] (MemStore. (merge api/default-prefixes prefixes) base {} {} {} {})))
+  
   (defn make-dataset
-    [& {:keys [models prefixes] :or {prefixes {}}}]
+    [& {:keys [models prefixes base] :or {prefixes {}}}]
     (reduce #(apply api/update-model % %2)
-            (MemDataset. {:default (make-store prefixes)})
+            (MemDataset. {:default (make-store prefixes base)})
             models))
-
+  
   (defn init-store-from-model
     [f]
-    (let [triples (ttl/parse-triples-with-meta f)]
-      (api/add-many (make-store (:prefixes (meta (first triples)))) triples)))
-
+    (let [triples (ttl/parse-triples-with-meta f)
+          {:keys [prefixes base]} (meta (first triples))]
+      (api/add-many (make-store prefixes base) triples)))
+  
   (defn select-from
     [[s p o] triples]
     (api/select (api/add-many (make-store) triples) s p o))
-
 #+END_SRC

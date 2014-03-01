@@ -3,11 +3,12 @@
 #+EXPORT_EXCLUDE_TAGS: noexport
 
 * Namespace: thi.ng.ldk.query.executor
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/query/executor.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/executor.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.query.executor
     (:require
      [thi.ng.ldk.core.api :as api]
      [thi.ng.ldk.common.util :as util]
+     [thi.ng.common.data.graph :as g]
      [thi.ng.common.data.core :as d]
      [clojure.set :as set]
      ,#+clj [clojure.pprint :refer [pprint]]))
@@ -58,24 +59,6 @@
     "Takes a result binding map `r`, a triple vector `t`, a var name `v` and an index. If `v`
     is truthy, injects `v` as new key into `r` with its value at (t idx)."
     [r t v idx] (if v (assoc r v (t idx)) r))
-  
-  (defn register-same-as
-    "Takes a map of aliases and adds a bi-directional relationship
-    between `x` and `y`."
-    [aliases x y]
-    (-> aliases
-        (update-in [x] d/set-conj y)
-        (update-in [y] d/set-conj x)))
-  
-  (defn same-as?
-    "Takes a map of same-as rels and two keys, returns true if keys
-    are considered equal."
-    ([aliases x y] (or (= x y) (same-as? aliases [x] y #{})))
-    ([aliases [x & queue] y visited]
-       (if (get-in aliases [x y])
-         true
-         (when-let [q' (->> x aliases (filter (complement visited)) (into queue) set seq)]
-           (recur aliases q' y (conj visited x))))))
   
   (defn triple-verifier
     "Takes a triple pattern (potentially with vars) and a 3-elem boolean

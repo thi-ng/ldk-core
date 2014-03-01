@@ -17,24 +17,34 @@
 
 ** Injected properties                                             :noexport:
 #+BEGIN_SRC clojure :exports none :noweb-ref version
-0.1.1-SNAPSHOT
+0.2.0-SNAPSHOT
 #+END_SRC
 #+BEGIN_SRC clojure :exports none :noweb-ref project-url
 http://code.thi.ng/ldk-core
 #+END_SRC
-** Objectives
-** Literal programming format
-#+INCLUDE: "../_shared/literalprogramming.org"
+#+BEGIN_SRC clojure :exports none :noweb-ref gen-source-path
+target/classes
+#+END_SRC
+#+BEGIN_SRC clojure :exports none :noweb-ref gen-test-path
+target/test-classes
+#+END_SRC
+#+BEGIN_SRC clojure :exports none :noweb yes :noweb-ref cljs-artefact-path
+target/ldk-core-<<version>>.js
+#+END_SRC
+
+** Description
+
 ** License
-   This project is open source and licensed under the [[http://www.apache.org/licenses/LICENSE-2.0][Apache Software License 2.0]].
+This project is open source and licensed under the [[http://www.apache.org/licenses/LICENSE-2.0][Apache Software License 2.0]].
+
 ** Dependencies
 *** Runtime
 **** [[https://github.com/clojure/clojure][Clojure]] & [[https://github.com/clojure/clojurescript][ClojureScript]]
 #+BEGIN_SRC clojure :noweb-ref dep-clj
-[org.clojure/clojure "1.5.1"]
+[org.clojure/clojure "1.6.0-beta1"]
 #+END_SRC
 #+BEGIN_SRC clojure :noweb-ref dep-cljs
-[org.clojure/clojurescript "0.0-1885"]
+[org.clojure/clojurescript "0.0-2173"]
 #+END_SRC
 **** [[https://github.com/clojure/data.csv][clojure.data.csv]]
 #+BEGIN_SRC clojure :noweb-ref dep-csv
@@ -53,17 +63,29 @@ http://code.thi.ng/ldk-core
 [com.stuartsierra/dependency "0.1.0"]
 #+END_SRC
 **** thi.ng/common
-#+BEGIN_SRC clojure :noweb-ref dep-utils
-[thi.ng/common "0.1.0-SNAPSHOT"]
+#+BEGIN_SRC clojure :noweb-ref dep-common
+[thi.ng/common "0.1.2-SNAPSHOT"]
 #+END_SRC
 *** Development
 **** [[https://github.com/lynaghk/cljx][cljx]]
 #+BEGIN_SRC clojure :noweb-ref dep-cljx
-[com.keminglabs/cljx "0.3.0"]
+[com.keminglabs/cljx "0.3.2"]
 #+END_SRC
 **** [[https://github.com/emezeske/lein-cljsbuild][lein-cljsbuild]]
 #+BEGIN_SRC clojure :noweb-ref dep-cljsbuild
-[lein-cljsbuild "0.3.3"]
+[lein-cljsbuild "1.0.2"]
+#+END_SRC
+**** [[https://github.com/hugoduncan/criterium][Criterium]]
+#+BEGIN_SRC clojure :noweb-ref dep-criterium
+[criterium "0.4.1"]
+#+END_SRC
+**** [[https://github.com/cemerick/austin][Austin]]
+#+BEGIN_SRC clojure :noweb-ref dep-austin
+[com.cemerick/austin "0.1.4"]
+#+END_SRC
+**** [[https://github.com/cemerick/clojurescript.test][clojurescript.test]]
+#+BEGIN_SRC clojure :noweb-ref dep-cljs-test
+[com.cemerick/clojurescript.test "0.2.2"]
 #+END_SRC
 
 ** Authors
@@ -81,74 +103,84 @@ http://code.thi.ng/ldk-core
 #+END_SRC
 
 ** Leiningen project file                                          :noexport:
-#+BEGIN_SRC clojure :tangle babel/project.clj :noweb yes
+#+BEGIN_SRC clojure :tangle babel/project.clj :noweb yes :mkdirp yes :padline no
   (defproject thi.ng/ldk-core "<<version>>"
     :description "Linked Data Kit - a Clojure toolkit for the Semantic Web"
     :url "<<project-url>>"
     :license {:name "Apache Software License"
-              :url "http://www.eclipse.org/legal/epl-v10.html"}
+              :url "http://www.apache.org/licenses/LICENSE-2.0"}
     :dependencies [<<dep-clj>>
                    <<dep-csv>>
                    <<dep-json>>
                    <<dep-time>>
                    <<dep-depgraph>>
-                   <<dep-utils>>]
+                   <<dep-common>>]
   
-    :jar-exclusions [#"\.cljx|\.DS_Store|\.js|\.html"]
     :source-paths ["src-clj"]
+    :test-paths ["<<gen-test-path>>"]
   
-    :cljx {:builds [{:source-paths ["src-cljx"]
-                     :output-path "src-clj"
+    :profiles {:dev {:dependencies [<<dep-cljs>>
+                                    <<dep-criterium>>]
+                     :plugins [<<dep-cljx>>
+                               <<dep-cljsbuild>>
+                               <<dep-cljs-test>>
+                               <<dep-austin>>]
+                     :aliases {"cleantest" ["do" "clean," "cljx" "once," "test," "cljsbuild" "test"]}}}
+  
+    :cljx {:builds [{:source-paths ["src/cljx"]
+                     :output-path "<<gen-source-path>>"
                      :rules :clj}
-                    {:source-paths ["src-cljx"]
-                     :output-path "src-cljs"
+                    {:source-paths ["src/cljx"]
+                     :output-path "<<gen-source-path>>"
+                     :rules :cljs}
+                    {:source-paths ["test/cljx"]
+                     :output-path "<<gen-test-path>>"
+                     :rules :clj}
+                    {:source-paths ["test/cljx"]
+                     :output-path "<<gen-test-path>>"
                      :rules :cljs}]}
   
-    :cljsbuild {:builds
-                [{:id "dev"
-                  :source-paths ["src-cljs"]
-                  :compiler
-                  {:pretty-print true
-                   :output-to "resources/public/js/ldk-core-<<version>>.js"
-                   :optimizations :simple}
-                  :jar false}]}
-  
-    :profiles {:dev {:plugins [<<dep-cljx>>
-                               <<dep-cljsbuild>>]
-                     :dependencies [<<dep-cljs>>]
-                     :hooks [cljx.hooks]}
-               :test {:injections [(set! *warn-on-reflection* true)
-                                   (require
-                                    '[thi.ng.ldk.core.api :as api]
-                                    '[thi.ng.ldk.query.core :as q]
-                                    '[thi.ng.ldk.query.executor :as qe]
-                                    '[thi.ng.ldk.query.expressions :as exp]
-                                    '[thi.ng.ldk.query.resultio :as rio]
-                                    ;; '[thi.ng.ldk.io.core :as io]
-                                    '[thi.ng.ldk.io.turtle :as ttl]
-                                    '[thi.ng.ldk.inference.core :as inf]
-                                    '[thi.ng.ldk.common.util :as u]
-                                    '[thi.ng.ldk.store.memory :as mem]
-                                    '[clojure.java.io :as jio])]}})
+    :cljsbuild {:builds [{:source-paths ["<<gen-source-path>>" "<<gen-test-path>>"]
+                          :id "simple"
+                          :compiler {:output-to "<<cljs-artefact-path>>"
+                                     :optimizations :whitespace
+                                     :pretty-print true}}]
+                :test-commands {"unit-tests" ["phantomjs" :runner "<<cljs-artefact-path>>"]}})
 #+END_SRC
 
-* Namespaces
-#+INCLUDE: "core.org" :minlevel 2
-#+INCLUDE: "store.org" :minlevel 2
-#+INCLUDE: "query.org" :minlevel 2
-#+INCLUDE: "inference.org" :minlevel 2
-#+INCLUDE: "io.org" :minlevel 2
-#+INCLUDE: "common.org" :minlevel 2
-
-* ClojureScript test harness                                       :noexport:
-#+BEGIN_SRC html :tangle babel/resources/public/index.html :noweb yes
+** ClojureScript test harness                                      :noexport:
+#+BEGIN_SRC html :tangle babel/index.html :noweb yes
   <!DOCTYPE html>
   <html lang="en">
     <head>
       <title>thing-ldk-core test</title>
     </head>
     <body>
-      <script type="text/javascript" src="js/ldk-core-<<version>>.js"></script>
+      <script type="text/javascript" src="<<cljs-artefact-path>>"></script>
     </body>
   </html>
 #+END_SRC
+** Accessing library version during runtime
+
+  The autogenerated namespace =thi.ng.ldk.version= contains a single
+  symbol =version= holding the version string defined above:
+
+#+BEGIN_SRC clojure :noweb yes
+  (use 'thi.ng.ldk.version)
+  
+  (prn version)
+  ; "<<version>>"
+#+END_SRC
+*** Version namespace                                              :noexport:
+#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/version.cljx :noweb yes :mkdirp yes :padline no
+  (ns thi.ng.ldk.version)
+  (def ^:const version "<<version>>")
+#+END_SRC
+
+* Modules
+#+INCLUDE: "core.org" :minlevel 2
+#+INCLUDE: "store.org" :minlevel 2
+#+INCLUDE: "query.org" :minlevel 2
+#+INCLUDE: "inference.org" :minlevel 2
+#+INCLUDE: "io.org" :minlevel 2
+#+INCLUDE: "common.org" :minlevel 2

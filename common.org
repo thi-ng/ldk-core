@@ -4,12 +4,12 @@
 
 * Namespace: thi.ng.ldk.common
 
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/common/util.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.common.util)
 #+END_SRC
 
 ** Variables
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/common/util.cljx
   (def qvar? #(and (symbol? %) (re-matches #"^\?.*" (name %))))
 
   (def blank-var? #(and (symbol? %) (re-matches #"^\?_.*" (name %))))
@@ -21,7 +21,7 @@
 ** UUID generation
 *** TODO add CLJS version
 [[file:/Library/Java/JavaVirtualMachines/jdk1.7.0_17.jdk/Contents/Home/src.zip:java/util/UUID.java]]
-#+BEGIN_SRC clojure :tangle babel/src-cljx/thi/ng/ldk/common/util.cljx
+#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/common/util.cljx
   (defn uuid []
     #+clj (.toString (java.util.UUID/randomUUID))
     #+cljs nil)

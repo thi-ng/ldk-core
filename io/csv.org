@@ -5,7 +5,7 @@
 * Namespace: thi.ng.ldk.io.csv
 
 ** Namespace declaration
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/io/csv.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx :mkdirp yes :padline no
   (ns thi.ng.ldk.io.csv
     (:require
      [thi.ng.ldk.core.api :as api]
@@ -16,7 +16,7 @@
     #+clj (:import java.text.DecimalFormat))
 #+END_SRC
 ** Reading & transforming functions
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/io/csv.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx
   ,#+clj
   (defn parse-csv-with
     "Takes a CSV input and fn. Applies the CSV header row vector to fn which
@@ -68,7 +68,7 @@
                  transformed)))))))
 #+END_SRC
 ** Type parsing helpers
-#+BEGIN_SRC clojure :tangle ../babel/src-cljx/thi/ng/ldk/io/csv.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx
 #+clj
 (defn numberformat
   [fmt]
