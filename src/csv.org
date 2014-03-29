@@ -1,22 +1,20 @@
-#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
-#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
-#+EXPORT_EXCLUDE_TAGS: noexport
+#+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.ldk.io.csv
+* Namespace: thi.ng.sema.io.csv
 
 ** Namespace declaration
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx :mkdirp yes :padline no
-  (ns thi.ng.ldk.io.csv
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/io/csv.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.io.csv
     (:require
-     [thi.ng.ldk.core.api :as api]
-     [thi.ng.ldk.common.util :as util]
+     [thi.ng.sema.core.api :as api]
+     [thi.ng.sema.common.util :as util]
      [clojure.string :as str]
      #+clj [clojure.java.io :as io]
      #+clj [clojure.data.csv :as csv])
     #+clj (:import java.text.DecimalFormat))
 #+END_SRC
 ** Reading & transforming functions
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/io/csv.cljx
   ,#+clj
   (defn parse-csv-with
     "Takes a CSV input and fn. Applies the CSV header row vector to fn which
@@ -68,7 +66,7 @@
                  transformed)))))))
 #+END_SRC
 ** Type parsing helpers
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/csv.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/io/csv.cljx
 #+clj
 (defn numberformat
   [fmt]

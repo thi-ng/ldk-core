@@ -1,11 +1,9 @@
-#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
-#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
-#+EXPORT_EXCLUDE_TAGS: noexport
+#+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.ldk.inference
+* Namespace: thi.ng.sema.inference
 
 ** Inference rules
-#+BEGIN_SRC text :tangle babel/resources/rules/inference-rules.ttl :mkdirp yes :padline no
+#+BEGIN_SRC text :tangle ../babel/resources/rules/inference-rules.ttl :mkdirp yes :padline no
   @base         <http://owl.thi.ng/inference-rules> .
   @prefix :     <http://owl.thi.ng/inference#> .
   @prefix owl:  <http://www.w3.org/2002/07/owl#> .
@@ -67,13 +65,13 @@
      ) .
 #+END_SRC
 ** Rule based inference
-#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/inference/core.cljx :mkdirp yes :padline no
-  (ns thi.ng.ldk.inference.core
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/inference/core.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.inference.core
     (:require
-     [thi.ng.ldk.core.api :as api]
-     [thi.ng.ldk.query.executor :as q]
-     [thi.ng.ldk.io.turtle :as ttl]
-     [thi.ng.ldk.store.memory :as mem]
+     [thi.ng.sema.core.api :as api]
+     [thi.ng.sema.query.executor :as q]
+     [thi.ng.sema.io.turtle :as ttl]
+     [thi.ng.sema.store.memory :as mem]
      [clojure.set :as set]
      ,#+clj [clojure.pprint :refer [pprint]]
      ,#+clj [clojure.java.io :as jio]))

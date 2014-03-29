@@ -8,11 +8,12 @@ for i in $@; do
     FILES="$FILES \"$i\""
 done
 
-
 emacs -Q --batch \
     --eval \
     "(progn
-     (require 'org)(require 'ob)(require 'ob-tangle)
+     (require 'org)(require 'ob)(require 'ob-tangle)(require 'ob-lob)
+     (org-babel-lob-ingest \"src/libraryofbabel.org\")
+     (setq org-confirm-babel-evaluate nil)
      (mapc (lambda (file)
             (find-file (expand-file-name file \"$DIR\"))
             (org-babel-tangle)

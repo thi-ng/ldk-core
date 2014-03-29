@@ -1,13 +1,11 @@
-#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
-#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
-#+EXPORT_EXCLUDE_TAGS: noexport
+#+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.ldk.query.executor
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/query/executor.cljx :mkdirp yes :padline no
-  (ns thi.ng.ldk.query.executor
+* Namespace: thi.ng.sema.query.executor
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/query/executor.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.query.executor
     (:require
-     [thi.ng.ldk.core.api :as api]
-     [thi.ng.ldk.common.util :as util]
+     [thi.ng.sema.core.api :as api]
+     [thi.ng.sema.common.util :as util]
      [thi.ng.common.data.graph :as g]
      [thi.ng.common.data.core :as d]
      [clojure.set :as set]

@@ -1,0 +1,67 @@
+#+SETUP_FILE: "setup.org"
+
+* Namespace: thi.ng.sema.core.mapper
+
+** RDF object mapping
+
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/mapper.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.core.api.mapper
+    (:require
+     [thi.ng.sema.core.api :as api]
+     [thi.ng.common.data.core :as d]
+     [com.stuartsierra.dependency :as dep]))
+
+  (defn triple-dependency-graph
+    [triples]
+    (reduce (fn [g [s _ o]] (dep/depend g o s)) (dep/graph) triples))
+
+  (defn filter-roots
+    [g coll]
+    (filter #(not (seq (dep/immediate-dependencies g %))) coll))
+
+  (defn make-tree
+    [index g tree subj objects]
+    (->> objects
+         (mapcat #(mapcat (fn [ps] (when (= subj (ps 1)) [[(ps 0) %]])) (index %)))
+         (reduce
+          (fn [tree [p o]]
+            (if-let [o* (seq (dep/immediate-dependents g o))]
+              (update-in tree [subj p] d/vec-conj2* (make-tree index g {} o o*))
+              (update-in tree [subj p] d/vec-conj2* o)))
+          tree)))
+
+  (defn ->pname
+    [prefixes] #(->> % (api/label) (api/iri-as-pname prefixes)))
+
+  (defn ->literal
+    [x] (if (api/literal? x) (api/literal-value x) x))
+
+  (defn triples-as-tree
+    [triples & {:keys [subj pred obj]
+                :or {subj identity pred identity obj identity}}]
+    (let [s-idx (d/collect-indexed #(% 0) subj triples)
+          p-idx (d/collect-indexed #(% 1) pred triples)
+          o-idx (d/collect-indexed #(% 2) obj triples)
+          triples (map (fn [[s p o]] [(s-idx s) (p-idx p) (o-idx o)]) triples)
+          index (reduce
+                 (fn [idx [s p o]] (update-in idx [o] d/set-conj [p s]))
+                 {} triples)
+          g (triple-dependency-graph triples)]
+      (->> (vals s-idx)
+           (filter-roots g)
+           (reduce #(make-tree index g % %2 (dep/immediate-dependents g %2)) {}))))
+#+END_SRC
+
+** Test example
+
+#+BEGIN_SRC clojure
+  (q/triples-as-tree
+   [[:a :p1 :b] [:a :p1 :g] [:a :p2 :c] [:b :p3 :d] [:d :p4 :e] [:b :p5 :f] [:g :p2 :h] [:g :p2 :hh]])
+
+  ;; =>
+  {:a
+   {:p1 [{:b {:p3 {:d {:p4 :e}}
+              :p5 :f}}
+         {:g {:p2 [:hh :h]}}]
+    :p2 :c}}
+#+END_SRC 

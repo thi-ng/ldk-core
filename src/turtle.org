@@ -1,14 +1,12 @@
-#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
-#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
-#+EXPORT_EXCLUDE_TAGS: noexport
+#+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.ldk.io.turtle
+* Namespace: thi.ng.sema.io.turtle
 
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/io/turtle.cljx :mkdirp yes :padline no
-  (ns thi.ng.ldk.io.turtle
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/io/turtle.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.io.turtle
     (:refer-clojure :exclude [peek])
     (:require
-     [thi.ng.ldk.core.api :as api :refer [default-prefixes]]
+     [thi.ng.sema.core.api :as api :refer [default-prefixes]]
      [thi.ng.common.data.core :as d]
      ,#+clj [clojure.string :as str]
      ,#+clj [clojure.pprint :refer [pprint]]

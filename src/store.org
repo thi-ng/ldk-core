@@ -1,14 +1,12 @@
-#+SEQ_TODO:       TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
-#+TAGS:           Write(w) Update(u) Fix(f) Check(c) noexport(n)
-#+EXPORT_EXCLUDE_TAGS: noexport
+#+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.ldk.store
+* Namespace: thi.ng.sema.store
 
-#+BEGIN_SRC clojure :tangle babel/src/cljx/thi/ng/ldk/store/memory.cljx :mkdirp yes :padline no
-  (ns thi.ng.ldk.store.memory
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx :mkdirp yes :padline no
+  (ns thi.ng.sema.store.memory
     (:require
-     [thi.ng.ldk.core.api :as api]
-     [thi.ng.ldk.io.turtle :as ttl]
+     [thi.ng.sema.core.api :as api]
+     [thi.ng.sema.io.turtle :as ttl]
      [thi.ng.common.data.core :as d]))
   
   (def ^:dynamic *hashimpl* (comp hash api/index-value))
@@ -48,57 +46,57 @@
   
   (defrecord MemStore [ns base idx spo pos ops]
     api/PModel
-    (add-statement [this [s p o]]
-      (let [[this sh] (index-entity this s)
-            [this ph] (index-entity this p)
-            [this oh] (index-entity this o)]
-        (-> this
+    (add-statement [_ [s p o]]
+      (let [[_ sh] (index-entity _ s)
+            [_ ph] (index-entity _ p)
+            [_ oh] (index-entity _ o)]
+        (-> _
             (update-in [:spo sh ph] d/set-conj oh)
             (update-in [:pos ph oh] d/set-conj sh)
             (update-in [:ops oh ph] d/set-conj sh))))
-    (add-many [this statements]
-      (reduce api/add-statement this statements))
-    (remove-statement [this [s p o]]
+    (add-many [_ statements]
+      (reduce api/add-statement _ statements))
+    (remove-statement [_ [s p o]]
       (let [[sh ph oh] (map *hashimpl* [s p o])
             props (spo sh)
             obj (get props ph)]
         (if (get obj oh)
-          (-> this
+          (-> _
               (remove-from-index :spo sh ph oh)
               (remove-from-index :pos ph oh sh)
               (remove-from-index :ops oh ph sh)
               (prune-entity-index sh)
               (prune-entity-index ph)
               (prune-entity-index oh))
-          this)))
-    (remove-many [this statements]
-      (reduce api/remove-statement this statements))
-    (update-statement [this s1 s2]
-      (api/add-statement (api/remove-statement this s1) s2))
-    (remove-subject [this s]
-      (api/remove-many this (api/select this s nil nil)))
-    (subject? [this x]
+          _)))
+    (remove-many [_ statements]
+      (reduce api/remove-statement _ statements))
+    (update-statement [_ s1 s2]
+      (api/add-statement (api/remove-statement _ s1) s2))
+    (remove-subject [_ s]
+      (api/remove-many _ (api/select _ s nil nil)))
+    (subject? [_ x]
       (let [h (*hashimpl* x)] (when (spo h) (idx h))))
-    (predicate? [this x]
+    (predicate? [_ x]
       (let [h (*hashimpl* x)] (when (pos h) (idx h))))
-    (object? [this x]
+    (object? [_ x]
       (let [h (*hashimpl* x)] (when (ops h) (idx h))))
-    (indexed? [this x] (idx (*hashimpl* x)))
-    (subjects [this] (map idx (keys spo)))
-    (predicates [this] (map idx (keys pos)))
-    (objects [this] (map idx (keys ops)))
-    (add-prefix [this prefix uri]
-      (assoc-in this [:ns prefix] uri))
-    (add-prefix [this prefix-map]
-      (update-in this [:ns] merge prefix-map))
-    (prefix-map [this] ns)
-    (base-uri [this] base)
-    (set-base-uri [this uri]
-      (assoc this :base uri))
-    (select [this]
-      (api/select this nil nil nil))
+    (indexed? [_ x] (idx (*hashimpl* x)))
+    (subjects [_] (map idx (keys spo)))
+    (predicates [_] (map idx (keys pos)))
+    (objects [_] (map idx (keys ops)))
+    (add-prefix [_ prefix uri]
+      (assoc-in _ [:ns prefix] uri))
+    (add-prefix [_ prefix-map]
+      (update-in _ [:ns] merge prefix-map))
+    (prefix-map [_] ns)
+    (base-uri [_] base)
+    (set-base-uri [_ uri]
+      (assoc _ :base uri))
+    (select [_]
+      (api/select _ nil nil nil))
     (select
-      [this s p o]
+      [_ s p o]
       (let [[sh ph oh] (map *hashimpl* [s p o])]
         (if s
           (if p
@@ -107,103 +105,103 @@
               (when (get-in spo [sh ph oh]) [[(idx sh) (idx ph) (idx oh)]])
               ;; s p nil
               (when-let [objects (get-in spo [sh ph])]
-                (map (triple-sp* this (idx sh) (idx ph)) objects)))
+                (map (triple-sp* _ (idx sh) (idx ph)) objects)))
             ;; s nil o / s nil nil
             (when-let [subjects (spo sh)]
-              (select-seq subjects #(triple-sp* this (idx sh) (idx %)) (when o #(= oh %)))))
+              (select-seq subjects #(triple-sp* _ (idx sh) (idx %)) (when o #(= oh %)))))
           (if p
             (if o
               ;; nil p o
               (when-let [subjects (get-in pos [ph oh])]
-                (map (triple-*po this (idx ph) (idx oh)) subjects))
+                (map (triple-*po _ (idx ph) (idx oh)) subjects))
               ;; nil p nil
               (when-let [preds (pos ph)]
-                (select-seq preds #(triple-*po this (idx ph) (idx %)))))
+                (select-seq preds #(triple-*po _ (idx ph) (idx %)))))
             (if o
               ;; nil nil o
               (when-let [objects (ops oh)]
-                (select-seq objects #(triple-*po this (idx %) (idx oh))))
+                (select-seq objects #(triple-*po _ (idx %) (idx oh))))
               ;; nil nil nil
               (mapcat
                (fn [[sh props]]
-                 (select-seq props #(triple-sp* this (idx sh) (idx %))))
+                 (select-seq props #(triple-sp* _ (idx sh) (idx %))))
                spo))))))
-    (union [this others]
+    (union [_ others]
       (reduce
-       (fn [this m]
+       (fn [_ m]
          (reduce
-          (fn [this s] (api/add-statement this s))
-          (update-in this [:ns] merge (api/prefix-map m))
+          (fn [_ s] (api/add-statement _ s))
+          (update-in _ [:ns] merge (api/prefix-map m))
           (api/select m nil nil nil)))
-       this (if (satisfies? api/PModel others) [others] others)))
-    (intersection [this others]
+       _ (if (satisfies? api/PModel others) [others] others)))
+    (intersection [_ others]
       (let [others (if (satisfies? api/PModel others) [others] others)]
         (reduce
-         (fn [this [s p o :as t]]
+         (fn [_ [s p o :as t]]
            (if (every? #(seq (api/select % s p o)) others)
-             this
-             (api/remove-statement this t)))
-         this (api/select this nil nil nil))))
-    (difference [this others]
+             _
+             (api/remove-statement _ t)))
+         _ (api/select _ nil nil nil))))
+    (difference [_ others]
       (let [others (if (satisfies? api/PModel others) [others] others)]
         (reduce
-         (fn [this [s p o :as t]]
+         (fn [_ [s p o :as t]]
            (if (some #(seq (api/select % s p o)) others)
-             (api/remove-statement this t)
-             this))
-         this (api/select this nil nil nil)))))
+             (api/remove-statement _ t)
+             _))
+         _ (api/select _ nil nil nil)))))
   
   (defrecord MemDataset [models]
     api/PModel
-    (add-statement [this s]
-      (api/add-statement this :default s))
-    (add-statement [this g s]
-      (update-in this [:models g] api/add-statement s))
-    (add-many [this statements]
-      (api/add-many this :default statements))
-    (add-many [this g statements]
-      (update-in this [:models g] api/add-many statements))
-    (remove-statement [this s]
-      (api/remove-statement this :default s))
-    (remove-statement [this g s]
-      (update-in this [:models g] api/remove-statement s))
-    (remove-many [this statements]
-      (api/remove-many this :default statements))
-    (remove-many [this g statements]
-      (update-in this [:models g] api/remove-many statements))
+    (add-statement [_ s]
+      (api/add-statement _ :default s))
+    (add-statement [_ g s]
+      (update-in _ [:models g] api/add-statement s))
+    (add-many [_ statements]
+      (api/add-many _ :default statements))
+    (add-many [_ g statements]
+      (update-in _ [:models g] api/add-many statements))
+    (remove-statement [_ s]
+      (api/remove-statement _ :default s))
+    (remove-statement [_ g s]
+      (update-in _ [:models g] api/remove-statement s))
+    (remove-many [_ statements]
+      (api/remove-many _ :default statements))
+    (remove-many [_ g statements]
+      (update-in _ [:models g] api/remove-many statements))
     ;; TODO add remove-subject
-    (remove-subject [this s]
-      (api/remove-subject this :default s))
-    (remove-subject [this g s]
-      (update-in this [:models g] api/remove-subject s))
-    (select [this]
-      (api/select this nil nil nil))
-    (select [this s p o]
+    (remove-subject [_ s]
+      (api/remove-subject _ :default s))
+    (remove-subject [_ g s]
+      (update-in _ [:models g] api/remove-subject s))
+    (select [_]
+      (api/select _ nil nil nil))
+    (select [_ s p o]
       (mapcat #(api/select % s p o) (vals models)))
-    (select [this g s p o]
+    (select [_ g s p o]
       (api/select (models g) s p o))
-    (subject? [this x]
+    (subject? [_ x]
       (some #(api/subject? % x) (vals models)))
-    (predicate? [this x]
+    (predicate? [_ x]
       (some #(api/predicate? % x) (vals models)))
-    (object? [this x]
+    (object? [_ x]
       (some #(api/object? % x) (vals models)))
-    (indexed? [this x]
+    (indexed? [_ x]
       (some #(api/indexed? % x) (vals models)))
-    (subjects [this]
+    (subjects [_]
       (set (mapcat api/subjects (vals models))))
-    (predicates [this]
+    (predicates [_]
       (set (mapcat api/predicates (vals models))))
-    (objects [this]
+    (objects [_]
       (set (mapcat api/objects (vals models))))
-    (prefix-map [this]
+    (prefix-map [_]
       (apply merge (map api/prefix-map (vals models))))
     api/PDataset
-    (update-model [this id m]
-      (assoc-in this [:models id] m))
-    (remove-model [this id]
-      (update-in this [:models] dissoc id))
-    (get-model [this id]
+    (update-model [_ id m]
+      (assoc-in _ [:models id] m))
+    (remove-model [_ id]
+      (update-in _ [:models] dissoc id))
+    (get-model [_ id]
       (models id)))
   
   (defn make-store
