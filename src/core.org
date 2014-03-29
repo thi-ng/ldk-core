@@ -31,11 +31,23 @@
     (predicate? [_ x])
     (object? [_ x])
     (indexed? [_ x])
-    (remove-subject [_ s] [_ g s])
+    (remove-subject [_ s] [_ g s]))
+#+END_SRC
+**** PPrefixMap
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+  (defprotocol PPrefixMap
     (add-prefix [_ prefix uri] [_ prefix-map])
-    (prefix-map [_])
+    (prefix-map [_]))
+#+END_SRC
+**** PBaseURI
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+  (defprotocol PBaseURI
     (base-uri [_])
-    (set-base-uri [_ uri])
+    (set-base-uri [_ uri]))
+#+END_SRC
+**** PSetOps
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+  (defprotocol PSetOps
     (union [_ others])
     (intersection [_ others])
     (difference [_ others]))
@@ -55,8 +67,7 @@
 **** PNode
 #+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
   (defprotocol PNode
-    (label [_])
-    (resource? [_]))
+    (label [_]))
 #+END_SRC
 **** PLiteral
 #+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
@@ -214,11 +225,11 @@
        (if (= \< (first pname-or-iri))
          (resolve-iri (base-uri ds) (subs pname-or-iri 1 (dec (count pname-or-iri))))
          (resolve-pname-as-node (prefix-map ds) pname-or-iri))))
-  
+
   (defn blank-node
     ([] (NodeBlank. (util/uuid)))
     ([id] (NodeBlank. (str id))))
-  
+
   (defn literal
     ([val] (NodeLiteral. (str val) nil nil))
     ([val lang] (NodeLiteral. (str val) lang nil))
@@ -229,12 +240,21 @@
          (nil? type)             nil
          (satisfies? PNode type) (label type)
          (string? type)          type
-         :default                (throw
-                                  (IllegalArgumentException.
-                                   (str "Invalid literal type: " type)))))))
-  
+         :default                (err/illegal-arg! type)))))
+
   (declare XSD)
-  
+
+  (defn as-resource
+    [ds x blank-allowed?]
+    (cond
+     (satisfies? PNode x) x
+     (map? x) (cond
+               (:uri x) (map->NodeURI x)
+               (and blank-allowed? (:id x)) (map->NodeBlank x)
+               :default nil)
+     (string? x) (resource ds x)
+     :default nil))
+
   (defn as-node
     "Attempts to cast x into a PNode implementation, including typed
     literals for numbers, dates & booleans. If given a string, first
