@@ -8,42 +8,42 @@
      [thi.ng.sema.core.api :as api]
      [thi.ng.sema.io.turtle :as ttl]
      [thi.ng.common.data.core :as d]))
-  
+
   (def ^:dynamic *hashimpl* (comp hash api/index-value))
-  
+
   (defn index-entity
     [{idx :idx :as store} e]
     (let [h (*hashimpl* e)]
       (if (idx h)
         [store h]
         [(assoc-in store [:idx h] e) h])))
-  
+
   (defn remove-from-index
-    [store idx i1 i2 i3]
-    (let [props ((idx store) i1)
-          obj (disj (props i2) i3)
-          props (if-not (seq obj) (dissoc props i2) props)]
-      (if-not (seq props)
-        (update-in store [idx] dissoc i1)
-        (if-not (seq obj)
-          (assoc-in store [idx i1] props)
-          (assoc-in store [idx i1 i2] obj)))))
-  
+    [ds idx i1 i2 i3]
+    (let [kv ((idx ds) i1)
+          v (disj (kv i2) i3)
+          kv (if (seq v) kv (dissoc kv i2))]
+      (if (seq kv)
+        (if (seq v)
+          (assoc-in ds [idx i1 i2] v)
+          (assoc-in ds [idx i1] kv))
+        (update-in ds [idx] dissoc i1))))
+
   (defn prune-entity-index
     [store e]
     (if-not (or ((:spo store) e) ((:pos store) e) ((:ops store) e))
       (update-in store [:idx] dissoc e)
       store))
-  
+
   (defn triple-sp* [{:keys [idx]} s p] #(vector s p (idx %)))
   (defn triple-*po [{:keys [idx]} p o] #(vector (idx %) p o))
-  
+
   (defn select-seq
     ([coll triple-fn & [f-fn]]
        (mapcat (fn [[h objects]]
                  (map (triple-fn h) (if f-fn (filter f-fn objects) objects)))
                coll)))
-  
+
   (defrecord MemStore [ns base idx spo pos ops]
     api/PModel
     (add-statement [_ [s p o]]
@@ -85,14 +85,6 @@
     (subjects [_] (map idx (keys spo)))
     (predicates [_] (map idx (keys pos)))
     (objects [_] (map idx (keys ops)))
-    (add-prefix [_ prefix uri]
-      (assoc-in _ [:ns prefix] uri))
-    (add-prefix [_ prefix-map]
-      (update-in _ [:ns] merge prefix-map))
-    (prefix-map [_] ns)
-    (base-uri [_] base)
-    (set-base-uri [_ uri]
-      (assoc _ :base uri))
     (select [_]
       (api/select _ nil nil nil))
     (select
@@ -126,6 +118,20 @@
                (fn [[sh props]]
                  (select-seq props #(triple-sp* _ (idx sh) (idx %))))
                spo))))))
+
+    api/PPrefixMap
+    (add-prefix [_ prefix uri]
+      (assoc-in _ [:ns prefix] uri))
+    (add-prefix [_ prefix-map]
+      (update-in _ [:ns] merge prefix-map))
+    (prefix-map [_] ns)
+
+    api/PBaseURI
+    (base-uri [_] base)
+    (set-base-uri [_ uri]
+      (assoc _ :base uri))
+    
+    api/PSetOps
     (union [_ others]
       (reduce
        (fn [_ m]
@@ -150,7 +156,7 @@
              (api/remove-statement _ t)
              _))
          _ (api/select _ nil nil nil)))))
-  
+
   (defrecord MemDataset [models]
     api/PModel
     (add-statement [_ s]
@@ -194,6 +200,7 @@
       (set (mapcat api/predicates (vals models))))
     (objects [_]
       (set (mapcat api/objects (vals models))))
+    api/PPrefixMap
     (prefix-map [_]
       (apply merge (map api/prefix-map (vals models))))
     api/PDataset
@@ -203,25 +210,126 @@
       (update-in _ [:models] dissoc id))
     (get-model [_ id]
       (models id)))
-  
+
   (defn make-store
     ([] (make-store {} nil))
     ([prefixes] (make-store prefixes nil))
     ([prefixes base] (MemStore. (merge api/default-prefixes prefixes) base {} {} {} {})))
-  
+
   (defn make-dataset
     [& {:keys [models prefixes base] :or {prefixes {}}}]
     (reduce #(apply api/update-model % %2)
             (MemDataset. {:default (make-store prefixes base)})
             models))
-  
+
   (defn init-store-from-model
     [f]
     (let [triples (ttl/parse-triples-with-meta f)
           {:keys [prefixes base]} (meta (first triples))]
       (api/add-many (make-store prefixes base) triples)))
-  
+
   (defn select-from
     [[s p o] triples]
     (api/select (api/add-many (make-store) triples) s p o))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx
+  (defrecord PlainMemStore [spo pos ops]
+    api/PModel
+    (add-statement
+      [_ [s p o]]
+      (let [s (get (find spo s) 0 s)
+            p (get (find pos p) 0 p)
+            o (get (find ops o) 0 o)]
+        (if (get-in spo [s p o])
+          _
+          (-> _
+              (update-in [:spo s p] d/set-conj o)
+              (update-in [:pos p o] d/set-conj s)
+              (update-in [:ops o p] d/set-conj s)))))
+    (add-many [_ statements]
+      (reduce api/add-statement _ statements))
+    (remove-statement [_ [s p o]]
+      (let [props (spo s)
+            obj (get props p)]
+        (if (get obj o)
+          (-> _
+              (remove-from-index :spo s p o)
+              (remove-from-index :pos p o s)
+              (remove-from-index :ops o p s))
+          _)))
+    (remove-many [_ statements]
+      (reduce api/remove-statement _ statements))
+    (update-statement [_ s1 s2]
+      (api/add-statement (api/remove-statement _ s1) s2))
+    (remove-subject [_ s]
+      (api/remove-many _ (api/select _ s nil nil)))
+    (subject? [_ x]
+      (if (spo x) x))
+    (predicate? [_ x]
+      (if (pos x) x))
+    (object? [_ x]
+      (if (ops x) x))
+    (indexed? [_ x] (if (or (spo x) (pos x) (ops x)) x))
+    (subjects [_] (keys spo))
+    (predicates [_] (keys pos))
+    (objects [_] (keys ops))
+    (select [_]
+      (api/select _ nil nil nil))
+    (select
+      [_ s p o]
+      (if s
+        (if p
+          (if o
+            ;; s p o
+            (let [t [s p o]] (when (get-in spo t) [t]))
+            ;; s p nil
+            (if-let [objects (get-in spo [s p])]
+              (map #(vector s p %) objects)))
+          ;; s nil o / s nil nil
+          (if-let [subjects (spo s)]
+            (select-seq subjects (fn [p] #(vector s p %)) (when o #(= o %)))))
+        (if p
+          (if o
+            ;; nil p o
+            (if-let [subjects (get-in pos [p o])]
+              (map #(vector % p o) subjects))
+            ;; nil p nil
+            (if-let [preds (pos p)]
+              (select-seq preds (fn [o] #(vector % p o)))))
+          (if o
+            ;; nil nil o
+            (if-let [objects (ops o)]
+              (select-seq objects (fn [p] #(vector % p o))))
+            ;; nil nil nil
+            (mapcat
+             (fn [[s props]]
+               (select-seq props (fn [p] #(vector s p %))))
+             spo))))))
+
+  (defn plain-store
+    [] (PlainMemStore. {} {} {}))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx
+  (defrecord RDFMemStore [prefixes base store]
+    api/PModel
+    (add-statement
+      [_ [s p o]]
+      (let [s (api/as-resource _ s true)
+            p (api/as-resource _ p false)
+            o (api/as-node _ o)]
+        (assoc _ :store (api/add-statement store [s p o]))))
+
+    api/PPrefixMap
+    (add-prefix [_ prefix uri]
+      (assoc-in _ [:prefixes prefix] uri))
+    (add-prefix [_ prefix-map]
+      (update-in _ [:prefixes] merge prefix-map))
+    (prefix-map [_] prefixes)
+
+    api/PBaseURI
+    (base-uri [_] base)
+    (set-base-uri [_ uri]
+      (assoc _ :base uri)))
 #+END_SRC
