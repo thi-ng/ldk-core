@@ -1,8 +1,8 @@
-# thi.ng/sema
+# thi.ng/ldk-core
 
 Lightweight Linked Data tools for Clojure & Clojurescript.
 
-Sema provides an extensible architecture for working with Linked Data
+LDK provides an extensible architecture for working with Linked Data
 (using the W3C RDF model) and so far includes:
 
 - RDF value coercions & RDF container/collection type creation
