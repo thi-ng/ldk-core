@@ -1,13 +1,13 @@
 #+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.sema.core.api
+* Namespace: thi.ng.ldk.core.api
 
 ** Core API
 *** Namespace declaration
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx :mkdirp yes :padline no
-  (ns thi.ng.sema.core.api
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx :mkdirp yes :padline no
+  (ns thi.ng.ldk.core.api
     (:require
-     [thi.ng.sema.common.util :as util]
+     [thi.ng.ldk.common.util :as util]
      [thi.ng.common.data.core :as d]
      [thi.ng.common.error :as err]
      [clj-time.format :as tf]
@@ -16,7 +16,7 @@
 #+END_SRC
 *** Protocol definitions
 **** PModel
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PModel
     (add-statement [_ s] [_ g s])
     (add-many [_ statements] [_ g statements])
@@ -34,57 +34,57 @@
     (remove-subject [_ s] [_ g s]))
 #+END_SRC
 **** PPrefixMap
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PPrefixMap
     (add-prefix [_ prefix uri] [_ prefix-map])
     (prefix-map [_]))
 #+END_SRC
 **** PBaseURI
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PBaseURI
     (base-uri [_])
     (set-base-uri [_ uri]))
 #+END_SRC
 **** PSetOps
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PSetOps
     (union [_ others])
     (intersection [_ others])
     (difference [_ others]))
 #+END_SRC
 **** PDataset
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PDataset
     (remove-model [_ id])
     (update-model [_ id f])
     (get-model [_ id]))
 #+END_SRC
 **** PIndexable
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PIndexable
     (index-value [_]))
 #+END_SRC
 **** PNode
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PNode
     (label [_]))
 #+END_SRC
 **** PLiteral
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PLiteral
     (plain-literal? [_])
     (language [_])
     (datatype [_]))
 #+END_SRC
 **** PResource
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defprotocol PResource
     (ns-uri [_])
     (local-uri [_]))
 #+END_SRC
 *** RDF graph node types
 **** URIs
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeURI [uri]
     PNode
     (label [_] (.toString uri))
@@ -92,7 +92,7 @@
     (index-value [_] (.toString uri)))
 #+END_SRC
 **** RDF Literals
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeLiteral [label ^String lang type]
     PNode
     (label [_] label)
@@ -110,7 +110,7 @@
           label))))
 #+END_SRC
 **** RDF Blanknodes
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defrecord NodeBlank [id]
     PNode
     (label [_] id)
@@ -118,7 +118,7 @@
     (index-value [_] id))
 #+END_SRC
 **** Protocol support for built-in types
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (extend-protocol PIndexable
     String
     (index-value [_] _)
@@ -126,7 +126,7 @@
     (index-value [_] _))
 #+END_SRC
 *** Node type & triple validation
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn uri?
     "Returns true if x is a NodeURI instance"
     [x] (= NodeURI (type x)))
@@ -154,7 +154,7 @@
          (throw (IllegalArgumentException. (str "Invalid triple: " s p o))))))
 #+END_SRC
 *** PName & IRI resolution
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (declare resource literal-value)
   
   (defn resolve-iri
@@ -218,7 +218,7 @@
        %))
 #+END_SRC
 *** Node constructors / coercion
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn resource
     ([uri] (NodeURI. uri))
     ([ds pname-or-iri]
@@ -288,7 +288,7 @@
 *** RDF namespaces handling & resolution
 **** Default prefixes
 ***** TODO add more standard vocabs
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
 (def ^:const default-prefixes
   {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
    "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
@@ -298,7 +298,7 @@
    "inf" "http://owl.thi.ng/inference#"
    })
 #+END_SRC
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn resolve-pname-map
     ([m] (resolve-pname-map default-prefixes m true))
     ([m as-node?] (resolve-pname-map default-prefixes m as-node?))
@@ -307,7 +307,7 @@
          (reduce-kv (fn [m k v] (assoc m k (rfn prefixes v))) {} m))))
 #+END_SRC
 **** RDF syntax
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (def ^:const RDF
     (resolve-pname-map
      {:type "rdf:type"
@@ -325,7 +325,7 @@
       :nil "rdf:nil"}))
 #+END_SRC
 **** RDF Schema
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (def ^:const RDFS
     (resolve-pname-map
      {:sub-property "rdfs:subPropertyOf"
@@ -334,7 +334,7 @@
       :domain "rdfs:domain"}))
 #+END_SRC
 **** OWL
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (def ^:const OWL
     (resolve-pname-map
      {:class "owl:Class"
@@ -344,7 +344,7 @@
       :inverse-of "owl:inverseOf"}))
 #+END_SRC
 **** LDK inference vocab
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (def ^:const INF
     (resolve-pname-map
      {:ruleset "inf:RuleSet"
@@ -359,7 +359,7 @@
 **** XSD
      XSD URIs are mainly used for dealing with typed literals and
      thefore *not* defined as [[PNode]] instances, but merely simple strings.
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (def ^:const XSD
     (resolve-pname-map
      {:boolean "xsd:boolean"
@@ -403,7 +403,7 @@
          (set)))
 #+END_SRC
 **** XSD type conversion                                                :Fix:
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   ,#+clj (def xsd-factory ^:const (javax.xml.datatype.DatatypeFactory/newInstance))
 
   (defmulti literal-value #(datatype %))
@@ -474,7 +474,7 @@
      :default nil))
 #+END_SRC
 *** Triple pattern resolution
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn resolve-item
     [prefixes ^String base x]
     (cond
@@ -523,12 +523,12 @@
       (map #(replace subst %) tpl)))
 #+END_SRC
 *** Helper functions
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn remove-context
     [t] (if (= 4 (count t)) (rest t) t))
 #+END_SRC
 *** RDF collections
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
   (defn rdf-container-triples
     ([c-type coll] (rdf-container-triples c-type (blank-node) coll))
     ([c-type node coll]
@@ -583,7 +583,7 @@
        (when f (if r (cons f (rdf-list-seq store r)) [f])))))
 #+END_SRC
 *** RDF Statement reification
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/api.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/api.cljx
 (defn add-reified-statement
   ([store triple] (add-reified-statement store (blank-node) triple))
   ([store node [s p o] & extra]

@@ -1,12 +1,12 @@
 #+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.sema.store
+* Namespace: thi.ng.ldk.store
 
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx :mkdirp yes :padline no
-  (ns thi.ng.sema.store.memory
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/store/memory.cljx :mkdirp yes :padline no
+  (ns thi.ng.ldk.store.memory
     (:require
-     [thi.ng.sema.core.api :as api]
-     [thi.ng.sema.io.turtle :as ttl]
+     [thi.ng.ldk.core.api :as api]
+     [thi.ng.ldk.io.turtle :as ttl]
      [thi.ng.common.data.core :as d]))
 
   (def ^:dynamic *hashimpl* (comp hash api/index-value))
@@ -233,7 +233,7 @@
     (api/select (api/add-many (make-store) triples) s p o))
 #+END_SRC
 
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/store/memory.cljx
   (defrecord PlainMemStore [spo pos ops]
     api/PModel
     (add-statement
@@ -311,7 +311,7 @@
     [] (PlainMemStore. {} {} {}))
 #+END_SRC
 
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/store/memory.cljx
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/store/memory.cljx
   (defrecord RDFMemStore [prefixes base store]
     api/PModel
     (add-statement

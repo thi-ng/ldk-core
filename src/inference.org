@@ -1,6 +1,6 @@
 #+SETUPFILE: "setup.org"
 
-* Namespace: thi.ng.sema.inference
+* Namespace: thi.ng.ldk.inference
 
 ** Inference rules
 #+BEGIN_SRC text :tangle ../babel/resources/rules/inference-rules.ttl :mkdirp yes :padline no
@@ -65,13 +65,13 @@
      ) .
 #+END_SRC
 ** Rule based inference
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/inference/core.cljx :mkdirp yes :padline no
-  (ns thi.ng.sema.inference.core
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/inference/core.cljx :mkdirp yes :padline no
+  (ns thi.ng.ldk.inference.core
     (:require
-     [thi.ng.sema.core.api :as api]
-     [thi.ng.sema.query.executor :as q]
-     [thi.ng.sema.io.turtle :as ttl]
-     [thi.ng.sema.store.memory :as mem]
+     [thi.ng.ldk.core.api :as api]
+     [thi.ng.ldk.query.executor :as q]
+     [thi.ng.ldk.io.turtle :as ttl]
+     [thi.ng.ldk.store.memory :as mem]
      [clojure.set :as set]
      ,#+clj [clojure.pprint :refer [pprint]]
      ,#+clj [clojure.java.io :as jio]))

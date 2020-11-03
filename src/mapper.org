@@ -1,13 +1,13 @@
 #+SETUP_FILE: "setup.org"
 
-* Namespace: thi.ng.sema.core.mapper
+* Namespace: thi.ng.ldk.core.mapper
 
 ** RDF object mapping
 
-#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/sema/core/mapper.cljx :mkdirp yes :padline no
-  (ns thi.ng.sema.core.api.mapper
+#+BEGIN_SRC clojure :tangle ../babel/src/cljx/thi/ng/ldk/core/mapper.cljx :mkdirp yes :padline no
+  (ns thi.ng.ldk.core.api.mapper
     (:require
-     [thi.ng.sema.core.api :as api]
+     [thi.ng.ldk.core.api :as api]
      [thi.ng.common.data.core :as d]
      [com.stuartsierra.dependency :as dep]))
 

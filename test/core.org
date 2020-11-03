@@ -1,11 +1,11 @@
 #+SETUPFILE: "../src/setup.org"
 
-* thi.ng.sema.test.core
+* thi.ng.ldk.test.core
 
 ** Namespace declaration
 
-#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/sema/test/core.cljx :mkdirp yes :padline no
-  (ns thi.ng.sema.test.core
+#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/ldk/test/core.cljx :mkdirp yes :padline no
+  (ns thi.ng.ldk.test.core
     (:require
      ,#+clj  [clojure.test :refer :all]
      ,#+cljs [cemerick.cljs.test :as t])
@@ -15,13 +15,13 @@
 #+END_SRC
 ** TODO Test constants
 
-#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/sema/test/core.cljx
+#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/ldk/test/core.cljx
   (def meaning 42)
 #+END_SRC
 
 ** TODO Main tests
 
-#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/sema/test/core.cljx
+#+BEGIN_SRC clojure :tangle ../babel/test/cljx/thi/ng/ldk/test/core.cljx
   (deftest epic-fail
     (is (= 3 (+ 1 1)) "FIXME"))
 #+END_SRC
